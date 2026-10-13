@@ -6,6 +6,24 @@
 
 > Дані: [NEPTUN](https://neptun.in.ua). AirEcho, як і NEPTUN, **не є офіційною системою оповіщення**: дані можуть бути неточними або із запізненням. Завжди орієнтуйтеся на офіційні сигнали тривоги.
 
+## Завантажити
+
+**[⬇ Остання версія на сторінці релізів](https://github.com/KoctrX/AirEcho/releases/latest)**
+
+| Система | Файл |
+|---|---|
+| Ubuntu / Debian | `airecho_<версія>_amd64.deb` — рекомендовано, з іконкою в меню й доку |
+| Інший Linux | `AirEcho-<версія>.AppImage` |
+| Windows | `AirEcho.Setup.<версія>.exe` |
+| macOS (Apple Silicon, M1–M4) | `AirEcho-<версія>-arm64.dmg` |
+| macOS (Intel) | `AirEcho-<версія>.dmg` |
+
+Встановлення `.deb`:
+
+```bash
+sudo apt install ./airecho_*_amd64.deb
+```
+
 ## Можливості
 
 - Три колонки: тривоги й цілі, карта (CARTO Positron / Dark Matter), повідомлення каналів (клік відкриває канал у Telegram).
