@@ -25,6 +25,8 @@ export interface Settings {
   /** Lower-cased `@handles` shown in the feed while the filter is on (may be empty: show none). */
   channels: string[];
   activePresetId: string;
+  /** Seconds between polls of the channel feed (and of alerts/targets while the live socket is down). */
+  pollSeconds: number;
   /** NEPTUN target types hidden from the map (still listed and still voiced). */
   hiddenTypes: string[];
   /** Sound off until this time (ms since epoch); 0 = sound on, -1 = off until turned back on. */
@@ -61,6 +63,7 @@ export const DEFAULT_SETTINGS: Settings = {
   activePresetId: "default",
   muteUntil: 0,
   hiddenTypes: [],
+  pollSeconds: 10,
 };
 
 export const isMuted = (settings: Settings, now = Date.now()): boolean =>

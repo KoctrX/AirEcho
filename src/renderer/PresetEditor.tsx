@@ -78,7 +78,7 @@ function usePreview(presetId: string) {
     }
   };
 
-  return { playing: (id: string) => now?.id === id && !now.paused, toggle, error };
+  return { playing: (id: string) => now?.id === id && !now.paused, toggle, stop, error };
 }
 
 export default function PresetEditor({ preset }: { preset: Preset }) {
@@ -105,6 +105,7 @@ export default function PresetEditor({ preset }: { preset: Preset }) {
           track={track}
           playing={preview.playing(track.id)}
           onPlay={() => preview.toggle(track)}
+          onStopPreview={preview.stop}
           onChange={update}
           onDelete={() => remove(track.id)}
         />
@@ -127,6 +128,7 @@ function TrackRow({
   track,
   playing,
   onPlay,
+  onStopPreview,
   onChange,
   onDelete,
 }: {
@@ -134,6 +136,8 @@ function TrackRow({
   track: Track;
   playing: boolean;
   onPlay: () => void;
+  /** A paused preview holds the old sound: it must be dropped, not resumed, once the sound changes. */
+  onStopPreview: () => void;
   onChange: (track: Track) => void;
   onDelete: () => void;
 }) {
@@ -146,6 +150,7 @@ function TrackRow({
 
   const store = async (ext: string, bytes: Uint8Array) => {
     const path = await window.api.saveAudio(presetId, track.id, ext, bytes);
+    onStopPreview();
     onChange({ ...track, file: path });
     setVersion((v) => v + 1);
   };
@@ -242,7 +247,7 @@ function TrackRow({
             <Tooltip title={t.record}>
               <IconButton
                 onClick={() => {
-                  if (playing) onPlay();
+                  onStopPreview();
                   setRecording(true);
                 }}
               >

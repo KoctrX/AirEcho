@@ -10,6 +10,8 @@ import { featureCenter, pointInFeature } from "./geo";
 const BASE = "https://neptun.in.ua";
 const STREAM_URL = "wss://neptun.in.ua/api/v1/stream";
 const POLL_MS = 10_000;
+/** NEPTUN's rule: their REST snapshot is CDN-cached for a few seconds, never poll it more often. */
+export const MIN_POLL_S = 5;
 /** No frame at all for this long means dead, not idle — heartbeats keep a quiet feed talking. */
 const SILENCE_MS = 90_000;
 const RETRY_MIN_MS = 3_000;
@@ -118,6 +120,14 @@ const listeners = new Set<() => void>();
 const threats = new Map<string, Threat>();
 let alertsVersion = -1;
 
+/**
+ * When NEPTUN last said anything — a frame, a heartbeat, a poll answer. Kept outside the state: a
+ * heartbeat should not re-render the app, and the "updated N s ago" label reads it on its own tick.
+ */
+let lastHeard = 0;
+const heard = (): void => void (lastHeard = Date.now());
+export const lastUpdate = (): number => lastHeard;
+
 function set(patch: Partial<NeptunState>): void {
   state = { ...state, ...patch };
   for (const fn of listeners) fn();
@@ -133,7 +143,10 @@ export const useNeptun = (): NeptunState => useSyncExternalStore(subscribe, getS
 
 async function getJson<T>(path: string): Promise<T | null> {
   try {
-    const res = await fetch(`${BASE}${path}`, { signal: AbortSignal.timeout(8000) });
+    // `no-store`: their answers carry `max-age=5, stale-while-revalidate=25` and no validator, so
+    // from the browser cache we would show the previous answer while a background request fetched
+    // the new one. Our own interval (never under 5 s, their rule) is the cache.
+    const res = await fetch(`${BASE}${path}`, { cache: "no-store", signal: AbortSignal.timeout(8000) });
     return res.ok ? ((await res.json()) as T) : null;
   } catch {
     return null;
@@ -196,6 +209,7 @@ function connect(): void {
     };
     socket.onmessage = (event) => {
       alive();
+      heard();
       let frame: { type?: string; data?: any };
       try {
         frame = JSON.parse(String(event.data));
@@ -231,6 +245,7 @@ const messageKey = (m: FeedMessage): string => `${m.channel}|${m.date}|${m.text}
 
 async function pollMessages(): Promise<void> {
   const data = await getJson<{ messages?: FeedMessage[] }>("/api/v1/messages");
+  if (data) heard();
   const fresh = (data?.messages ?? []).filter((m) => typeof m?.text === "string" && m.text.trim() !== "");
   if (fresh.length === 0) return;
   const seen = new Set(state.messages.map(messageKey));
@@ -247,6 +262,7 @@ async function pollFallback(): Promise<void> {
     getJson<{ threats?: Threat[] }>("/api/v1/threats"),
   ]);
   if (state.connected) return;
+  if (alerts || list) heard();
   setAlerts(alerts);
   replaceThreats(list?.threats);
 }
@@ -288,6 +304,34 @@ async function loadCatalog(): Promise<void> {
   set({ catalog: { oblasts, raions, places } });
 }
 
+/** How often the feed (and, while the socket is down, alerts and targets) is asked again. */
+let pollMs = POLL_MS;
+let pollTimer: ReturnType<typeof setTimeout> | undefined;
+/**
+ * One poll loop at a time. A loop whose request is still in flight when the interval changes (or
+ * "update now" is pressed) must not carry on beside the new one — that doubled every request.
+ */
+let loop = 0;
+
+async function poll(): Promise<void> {
+  const mine = ++loop;
+  clearTimeout(pollTimer);
+  await Promise.all([pollMessages(), pollFallback()]);
+  if (mine === loop) pollTimer = setTimeout(poll, pollMs);
+}
+
+/** Takes effect at once: the next poll is rescheduled from now. */
+export function setPollInterval(seconds: number): void {
+  pollMs = Math.max(MIN_POLL_S, seconds) * 1000;
+  if (!started) return;
+  loop++;
+  clearTimeout(pollTimer);
+  pollTimer = setTimeout(poll, pollMs);
+}
+
+/** "Update now": ask for everything polled straight away, then carry on at the usual pace. */
+export const refreshNow = (): Promise<void> => poll();
+
 let started = false;
 export function start(): void {
   if (started) return;
@@ -295,7 +339,6 @@ export function start(): void {
   connect();
   loadCatalog();
   pollMessages();
-  setInterval(pollMessages, POLL_MS);
-  setTimeout(pollFallback, 2000);
-  setInterval(pollFallback, POLL_MS);
+  // The socket usually answers first; the REST fallback only steps in if it has not.
+  pollTimer = setTimeout(poll, 2000);
 }

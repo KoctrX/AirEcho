@@ -25,7 +25,7 @@ import ViewSidebarIcon from "@mui/icons-material/ViewSidebar";
 import ViewSidebarOutlinedIcon from "@mui/icons-material/ViewSidebarOutlined";
 import VolumeUpIcon from "@mui/icons-material/VolumeUp";
 import VolumeOffIcon from "@mui/icons-material/VolumeOff";
-import { start, useNeptun } from "./neptun";
+import { lastUpdate, setPollInterval, start, useNeptun } from "./neptun";
 import { isMuted } from "../shared/types";
 import { getApp, loadApp, saveSettings, useApp } from "./store";
 import { emit, typing } from "./shortcuts";
@@ -134,6 +134,32 @@ function Resizer({ side, at, onWidth }: { side: "left" | "right"; at: number; on
 }
 
 export type Focus = { lat: number; lon: number; at: number; id?: string };
+
+/** "оновлено 12 с тому" next to the connection chip: how fresh the data is, ticking every second. */
+function Freshness() {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  const at = lastUpdate();
+  if (!at) return null;
+  const sec = Math.max(0, Math.floor((now - at) / 1000));
+  const ago =
+    sec < 5 ? t.justNow : sec < 60 ? `${sec} с ${t.ago}` : sec < 3600 ? `${Math.floor(sec / 60)} хв ${t.ago}` : `${Math.floor(sec / 3600)} год ${t.ago}`;
+  return (
+    <Tooltip title={new Date(at).toLocaleTimeString("uk-UA")}>
+      <Typography
+        variant="caption"
+        // Two minutes without a word from NEPTUN is worth noticing: heartbeats come far more often.
+        color={sec > 120 ? "warning.main" : "text.secondary"}
+        sx={{ fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}
+      >
+        {`${t.updated} ${ago}`}
+      </Typography>
+    </Tooltip>
+  );
+}
 
 /** Current time, centred in the top bar — only while the app is fullscreen. */
 function FullscreenClock() {
@@ -317,6 +343,10 @@ function Shell() {
   }, []);
 
   useEffect(() => {
+    if (loaded) setPollInterval(settings.pollSeconds);
+  }, [loaded, settings.pollSeconds]);
+
+  useEffect(() => {
     if (loaded) setMode(settings.theme);
   }, [loaded, settings.theme, setMode]);
 
@@ -348,6 +378,7 @@ function Shell() {
             variant="outlined"
             label={neptun.connected ? t.online : t.offline}
           />
+          <Freshness />
           <Box sx={{ flex: 1 }} />
           {location && <Chip size="small" icon={<PlaceIcon />} label={location.name} />}
           {presets.length > 0 && (

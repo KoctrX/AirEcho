@@ -25,15 +25,18 @@ import {
   Tab,
   Tabs,
   TextField,
+  ToggleButton,
+  ToggleButtonGroup,
   Typography,
 } from "@mui/material";
 import EditIcon from "@mui/icons-material/Edit";
 import DeleteIcon from "@mui/icons-material/Delete";
 import AddIcon from "@mui/icons-material/Add";
+import RefreshIcon from "@mui/icons-material/Refresh";
 import FileDownloadIcon from "@mui/icons-material/FileDownload";
 import FileUploadIcon from "@mui/icons-material/FileUpload";
 import type { Location, Preset, ThemeMode } from "../shared/types";
-import { useNeptun, type Place } from "./neptun";
+import { MIN_POLL_S, refreshNow, useNeptun, type Place } from "./neptun";
 import { addPreset, deletePreset, newId, saveSettings, savePreset, useApp } from "./store";
 import { cartoStyle, drawLocation, onStyle } from "./MapView";
 import PresetEditor from "./PresetEditor";
@@ -50,7 +53,7 @@ export default function SettingsDialog({ open, onClose, dark }: { open: { tab?: 
     <Dialog open={open !== null} onClose={onClose} maxWidth="md" fullWidth slotProps={{ paper: { sx: { height: "85vh" } } }}>
       <Tabs value={tab} onChange={(_e, v) => setTab(v)} sx={{ borderBottom: 1, borderColor: "divider", px: 2 }}>
         <Tab label={t.tabLocations} />
-        <Tab label={t.tabLook} />
+        <Tab label={t.tabGeneral} />
         <Tab label={t.tabChannels} />
         <Tab label={t.tabSounds} />
         <Tab label={t.tabKeys} />
@@ -241,6 +244,7 @@ function PointPicker({ dark, loc, onChange }: { dark: boolean; loc: Location; on
 
 function LookTab() {
   const { settings } = useApp();
+  const [refreshing, setRefreshing] = useState(false);
   return (
     <>
       <Typography variant="subtitle1" sx={{ mb: 1 }}>
@@ -251,9 +255,44 @@ function LookTab() {
         <FormControlLabel value="light" control={<Radio />} label={t.themeLight} />
         <FormControlLabel value="dark" control={<Radio />} label={t.themeDark} />
       </RadioGroup>
+
+      <Typography variant="subtitle1" sx={{ mt: 3, mb: 1 }}>
+        {t.pollTitle}
+      </Typography>
+      <Stack direction="row" sx={{ alignItems: "center", gap: 2, flexWrap: "wrap" }}>
+        <ToggleButtonGroup
+          exclusive
+          size="small"
+          value={settings.pollSeconds}
+          onChange={(_e, v: number | null) => v !== null && saveSettings({ pollSeconds: v })}
+        >
+          {POLL_CHOICES.map((sec) => (
+            <ToggleButton key={sec} value={sec} sx={{ px: 1.75 }}>
+              {sec < 60 ? `${sec} с` : `${sec / 60} хв`}
+            </ToggleButton>
+          ))}
+        </ToggleButtonGroup>
+        <Button
+          size="small"
+          startIcon={<RefreshIcon />}
+          disabled={refreshing}
+          onClick={async () => {
+            setRefreshing(true);
+            await refreshNow();
+            setRefreshing(false);
+          }}
+        >
+          {t.refreshNow}
+        </Button>
+      </Stack>
+      <Typography variant="body2" color="text.secondary" sx={{ mt: 1.5, maxWidth: 560 }}>
+        {t.pollHint}
+      </Typography>
     </>
   );
 }
+
+const POLL_CHOICES = [MIN_POLL_S, 10, 15, 30, 60];
 
 function SoundsTab() {
   const { settings, presets } = useApp();
