@@ -10,6 +10,7 @@ import {
   Menu,
   MenuItem,
   Select,
+  GlobalStyles,
   ThemeProvider,
   Toolbar,
   Tooltip,
@@ -27,10 +28,12 @@ import VolumeOffIcon from "@mui/icons-material/VolumeOff";
 import { start, useNeptun } from "./neptun";
 import { isMuted } from "../shared/types";
 import { getApp, loadApp, saveSettings, useApp } from "./store";
+import { emit, typing } from "./shortcuts";
 import { audioUrl, createAnnouncer, createDetector, describe, matchTrack } from "./sounds";
 import { APP_VERSION, t } from "./texts";
 import MapView from "./MapView";
 import AlertsPanel from "./AlertsPanel";
+import type { RegionRef } from "./AlertsTab";
 import FeedPanel from "./FeedPanel";
 import SettingsDialog from "./Settings";
 
@@ -48,8 +51,85 @@ export default function App() {
   return (
     <ThemeProvider theme={theme} defaultMode="system">
       <CssBaseline />
+      <GlobalStyles
+        styles={{
+          // Thin, quiet scrollbars that follow the theme instead of the system's grey slabs. CSS
+          // variables, not theme.palette: that one holds the light scheme's values in both themes.
+          "*::-webkit-scrollbar": { width: 6, height: 6 },
+          "*::-webkit-scrollbar-track": { background: "transparent" },
+          "*::-webkit-scrollbar-thumb": {
+            borderRadius: 6,
+            background: "color-mix(in srgb, var(--mui-palette-text-primary) 22%, transparent)",
+          },
+          "*::-webkit-scrollbar-thumb:hover": { background: "color-mix(in srgb, var(--mui-palette-text-primary) 40%, transparent)" },
+          "*::-webkit-scrollbar-corner": { background: "transparent" },
+        }}
+      />
       <Shell />
     </ThemeProvider>
+  );
+}
+
+const PANEL = { left: 340, right: 380, min: 260, max: 640 };
+
+function storedWidth(side: "left" | "right"): number {
+  try {
+    const n = Number(localStorage.getItem(`panel:${side}:width`));
+    return n >= PANEL.min && n <= PANEL.max ? n : PANEL[side];
+  } catch {
+    return PANEL[side];
+  }
+}
+
+/**
+ * A drag handle on a panel's inner edge. Drag to resize, double-click for the default width;
+ * the width is a per-machine convenience kept in localStorage.
+ */
+function Resizer({ side, at, onWidth }: { side: "left" | "right"; at: number; onWidth: (w: number) => void }) {
+  const drag = (e: React.PointerEvent<HTMLDivElement>) => {
+    const grid = e.currentTarget.parentElement!.getBoundingClientRect();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    const move = (ev: PointerEvent) => {
+      const raw = side === "left" ? ev.clientX - grid.left : grid.right - ev.clientX;
+      onWidth(Math.round(Math.min(PANEL.max, Math.max(PANEL.min, raw))));
+    };
+    const target = e.currentTarget;
+    const up = () => {
+      target.removeEventListener("pointermove", move);
+      target.removeEventListener("pointerup", up);
+      document.body.style.cursor = "";
+    };
+    target.addEventListener("pointermove", move);
+    target.addEventListener("pointerup", up);
+    document.body.style.cursor = "col-resize";
+  };
+  return (
+    <Box
+      onPointerDown={drag}
+      onDoubleClick={() => onWidth(PANEL[side])}
+      title={t.resizePanel}
+      sx={{
+        position: "absolute",
+        top: 0,
+        bottom: 0,
+        [side]: at - 4,
+        width: 8,
+        zIndex: 5,
+        cursor: "col-resize",
+        "&::after": {
+          content: '""',
+          position: "absolute",
+          top: 0,
+          bottom: 0,
+          left: 3,
+          width: 2,
+          bgcolor: "primary.main",
+          opacity: 0,
+          transition: "opacity .15s",
+        },
+        "&:hover::after, &:active::after": { opacity: 0.8 },
+      }}
+    />
   );
 }
 
@@ -173,10 +253,57 @@ function Shell() {
   const { loaded, settings, presets } = useApp();
   const neptun = useNeptun();
   const { mode, systemMode, setMode } = useColorScheme();
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState<{ tab?: number } | null>(null);
   const [focus, setFocus] = useState<Focus | null>(null);
+  const [region, setRegion] = useState<RegionRef | null>(null);
   const [left, toggleLeft] = usePanel("left");
   const [right, toggleRight] = usePanel("right");
+  // App-wide shortcuts (the list is in shortcuts.ts and in Settings → Клавіші).
+  const keys = useRef({ toggleLeft, toggleRight });
+  keys.current = { toggleLeft, toggleRight };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (typing(e.target) || e.altKey) return;
+      if ((e.ctrlKey || e.metaKey) && e.code === "Comma") {
+        e.preventDefault();
+        return setSettingsOpen({});
+      }
+      if (e.ctrlKey || e.metaKey) return;
+      if (e.key === "?") return setSettingsOpen({ tab: 4 });
+      if (document.querySelector(".MuiDialog-root")) return;
+      switch (e.code) {
+        case "F11":
+          e.preventDefault();
+          if (document.fullscreenElement) document.exitFullscreen();
+          else document.body.requestFullscreen();
+          return;
+        case "KeyF":
+          return emit("fit");
+        case "BracketLeft":
+          return keys.current.toggleLeft();
+        case "BracketRight":
+          return keys.current.toggleRight();
+        case "Digit1":
+          return emit("tab:targets");
+        case "Digit2":
+          return emit("tab:alerts");
+        case "KeyL":
+          return emit("legend");
+        case "KeyM":
+          return saveSettings({ muteUntil: isMuted(getApp().settings) ? 0 : -1 });
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  const [widths, setWidths] = useState({ left: storedWidth("left"), right: storedWidth("right") });
+  const setWidth = (side: "left" | "right") => (w: number) => {
+    setWidths((was) => ({ ...was, [side]: w }));
+    try {
+      localStorage.setItem(`panel:${side}:width`, String(w));
+    } catch {}
+  };
   const detect = useRef(createDetector());
   const announce = useRef(createAnnouncer(() => window.api.showWindow(), () => isMuted(getApp().settings)));
 
@@ -240,7 +367,7 @@ function Shell() {
           <MuteButton muteUntil={settings.muteUntil} />
           <PanelToggle open={right} onClick={toggleRight} title={t.toggleRight} />
           <Tooltip title={t.settings}>
-            <IconButton onClick={() => setSettingsOpen(true)}>
+            <IconButton onClick={() => setSettingsOpen({})}>
               <SettingsIcon />
             </IconButton>
           </Tooltip>
@@ -248,14 +375,28 @@ function Shell() {
       </AppBar>
 
       <Box
-        sx={{ display: "grid", gridTemplateColumns: `${left ? "340px " : ""}1fr${right ? " 380px" : ""}`, minHeight: 0 }}
+        sx={{
+          position: "relative",
+          display: "grid",
+          gridTemplateColumns: `${left ? `${widths.left}px ` : ""}minmax(0, 1fr)${right ? ` ${widths.right}px` : ""}`,
+          minHeight: 0,
+        }}
       >
-        {left && <AlertsPanel location={location} onFocus={(lat, lon, id) => setFocus({ lat, lon, id, at: Date.now() })} />}
-        <MapView dark={dark} location={location} focus={focus} />
+        {left && <Resizer side="left" at={widths.left} onWidth={setWidth("left")} />}
+        {right && <Resizer side="right" at={widths.right} onWidth={setWidth("right")} />}
+        {left && (
+          <AlertsPanel
+            location={location}
+            onFocus={(lat, lon, id) => setFocus({ lat, lon, id, at: Date.now() })}
+            region={region}
+            onRegion={setRegion}
+          />
+        )}
+        <MapView dark={dark} location={location} focus={focus} region={region} onRegion={setRegion} />
         {right && <FeedPanel channels={settings.channelsFiltered ? settings.channels : null} />}
       </Box>
 
-      {loaded && <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} dark={dark} />}
+      {loaded && <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(null)} dark={dark} />}
     </Box>
   );
 }

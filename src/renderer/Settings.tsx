@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { SHORTCUTS } from "./shortcuts";
 import maplibregl, { type Map as MlMap } from "maplibre-gl";
 import {
   Alert,
@@ -39,21 +40,27 @@ import PresetEditor from "./PresetEditor";
 import ChannelFilter from "./ChannelFilter";
 import { APP_VERSION, t } from "./texts";
 
-export default function SettingsDialog({ open, onClose, dark }: { open: boolean; onClose: () => void; dark: boolean }) {
+export default function SettingsDialog({ open, onClose, dark }: { open: { tab?: number } | null; onClose: () => void; dark: boolean }) {
   const [tab, setTab] = useState(0);
+  // Opened for a given tab (the "?" shortcut opens the keys); otherwise where it was left.
+  useEffect(() => {
+    if (open?.tab !== undefined) setTab(open.tab);
+  }, [open]);
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth slotProps={{ paper: { sx: { height: "85vh" } } }}>
+    <Dialog open={open !== null} onClose={onClose} maxWidth="md" fullWidth slotProps={{ paper: { sx: { height: "85vh" } } }}>
       <Tabs value={tab} onChange={(_e, v) => setTab(v)} sx={{ borderBottom: 1, borderColor: "divider", px: 2 }}>
         <Tab label={t.tabLocations} />
         <Tab label={t.tabLook} />
         <Tab label={t.tabChannels} />
         <Tab label={t.tabSounds} />
+        <Tab label={t.tabKeys} />
       </Tabs>
       <DialogContent>
         {tab === 0 && <LocationsTab dark={dark} />}
         {tab === 1 && <LookTab />}
         {tab === 2 && <ChannelFilter />}
         {tab === 3 && <SoundsTab />}
+        {tab === 4 && <KeysTab />}
       </DialogContent>
       <DialogActions>
         <Typography variant="caption" color="text.secondary" sx={{ flex: 1, pl: 2 }}>
@@ -323,6 +330,53 @@ function SoundsTab() {
       </Stack>
       {error && <Alert severity="error">{error}</Alert>}
       {preset && <PresetEditor key={preset.id} preset={preset} />}
+    </Stack>
+  );
+}
+
+function KeysTab() {
+  return (
+    <Stack sx={{ pt: 1 }}>
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+        {t.keysNote}
+      </Typography>
+      {SHORTCUTS.map(({ keys, label }) => (
+        <Stack key={label} direction="row" sx={{ alignItems: "center", py: 0.9, borderBottom: 1, borderColor: "divider", gap: 2 }}>
+          <Typography variant="body2" sx={{ flex: 1 }}>
+            {label}
+          </Typography>
+          <Stack direction="row" sx={{ gap: 0.5, alignItems: "center" }}>
+            {keys.map((k, i) => (
+              <Stack key={k} direction="row" sx={{ gap: 0.5, alignItems: "center" }}>
+                {i > 0 && (
+                  <Typography variant="caption" color="text.secondary">
+                    +
+                  </Typography>
+                )}
+                <Box
+                  component="kbd"
+                  sx={{
+                    minWidth: 28,
+                    px: 1,
+                    py: 0.25,
+                    textAlign: "center",
+                    fontFamily: "inherit",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    borderRadius: 1.5,
+                    border: 1,
+                    borderColor: "divider",
+                    borderBottomWidth: 2,
+                    bgcolor: "action.hover",
+                  }}
+                >
+                  {k}
+                </Box>
+              </Stack>
+            ))}
+          </Stack>
+        </Stack>
+      ))}
     </Stack>
   );
 }

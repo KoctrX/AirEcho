@@ -76,3 +76,45 @@ export function featureCenter(feature: Feature<Geometry | null>): [number, numbe
   }
   return [y / (6 * area), x / (6 * area)];
 }
+
+/** West-south and east-north corners of a region, for fitting the map to it. */
+export function featureBounds(feature: Feature<Geometry | null>): [[number, number], [number, number]] {
+  let w = Infinity, s = Infinity, e = -Infinity, n = -Infinity;
+  for (const ring of outerRings(feature.geometry)) {
+    for (const [x, y] of ring) {
+      w = Math.min(w, x); e = Math.max(e, x);
+      s = Math.min(s, y); n = Math.max(n, y);
+    }
+  }
+  return [[w, s], [e, n]];
+}
+
+/** The region's outline as an SVG path fitted into a `size` box — the icon next to an alert. */
+export function shapePath(
+  feature: Feature<Geometry | null>,
+  size: number,
+  /** Draw in another region's frame — a raion inside its oblast's icon. */
+  frame = featureBounds(feature),
+): string {
+  const [[w, s], [e, n]] = frame;
+  if (!Number.isFinite(w)) return "";
+  // Longitude degrees shrink towards the pole: scale them, or every region looks too wide.
+  const kx = Math.cos((((s + n) / 2) * Math.PI) / 180);
+  const scale = (size - 2) / Math.max((e - w) * kx, n - s);
+  const dx = (size - (e - w) * kx * scale) / 2;
+  const dy = (size - (n - s) * scale) / 2;
+  return outerRings(feature.geometry)
+    .map((ring) => {
+      // A 28px icon needs a few dozen points, not the border's thousands.
+      const step = Math.max(1, Math.floor(ring.length / 120));
+      const points = ring.filter((_, i) => i % step === 0);
+      return `M${points.map(([x, y]) => `${(dx + (x - w) * kx * scale).toFixed(1)} ${(dy + (n - y) * scale).toFixed(1)}`).join("L")}Z`;
+    })
+    .join("");
+}
+
+/** The whole world with the region cut out: filled dark, it dims everything but the region. */
+export function maskAround(feature: Feature<Geometry | null>): Feature {
+  const world: Position[] = [[-180, -85], [180, -85], [180, 85], [-180, 85], [-180, -85]];
+  return { type: "Feature", properties: {}, geometry: { type: "Polygon", coordinates: [world, ...outerRings(feature.geometry)] } };
+}

@@ -18,7 +18,7 @@ let tray: Tray | null = null;
 let quitting = false;
 
 protocol.registerSchemesAsPrivileged([
-  { scheme: "airecho", privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
+  { scheme: "airecho", privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true } },
 ]);
 
 if (!app.requestSingleInstanceLock()) app.quit();
@@ -135,11 +135,15 @@ function registerIpc(): void {
 
 /** `airecho://preset/<id>/audio/<file>` → the file in userData, never anything outside it. */
 function registerAudioProtocol(): void {
-  protocol.handle("airecho", (request) => {
+  protocol.handle("airecho", async (request) => {
     const url = new URL(request.url);
     const file = resolve(presetsDir, decodeURIComponent(url.pathname.slice(1)));
     if (url.host !== "preset" || !file.startsWith(presetsDir + sep)) return new Response(null, { status: 404 });
-    return net.fetch(pathToFileURL(file).toString());
+    // Readable by the page's fetch (the settings decode a sound to show its length), not only by <audio>.
+    const res = await net.fetch(pathToFileURL(file).toString());
+    const headers = new Headers(res.headers);
+    headers.set("Access-Control-Allow-Origin", "*");
+    return new Response(res.body, { status: res.status, headers });
   });
 }
 

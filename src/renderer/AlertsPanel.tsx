@@ -1,22 +1,12 @@
-import { useMemo } from "react";
-import {
-  Box,
-  Card,
-  CardContent,
-  Chip,
-  List,
-  ListItemButton,
-  ListItemText,
-  ListSubheader,
-  Stack,
-  Typography,
-} from "@mui/material";
+import { useEffect, useState } from "react";
+import { on } from "./shortcuts";
+import { Box, Card, CardContent, Chip, Tab, Tabs, Typography } from "@mui/material";
 import type { Location } from "../shared/types";
-import { distanceKm } from "./geo";
-import { useNeptun, type AlertRegion, type Threat } from "./neptun";
-import { isNear, locationAlerts } from "./sounds";
-import { t, threatMeta } from "./texts";
-import { lookOf, markerSvg } from "./silhouettes";
+import { useNeptun, type Threat } from "./neptun";
+import { locationAlerts } from "./sounds";
+import { t } from "./texts";
+import TargetsTab from "./TargetsTab";
+import AlertsTab, { type RegionRef } from "./AlertsTab";
 
 export function formatTime(iso?: string): string {
   if (!iso) return "";
@@ -32,44 +22,47 @@ export function place(threat: Threat): string {
   return [...new Set([threat.locality, threat.district, threat.region].filter(Boolean))].join(", ");
 }
 
+function remembered(): number {
+  try {
+    return localStorage.getItem("panel:tab") === "alerts" ? 1 : 0;
+  } catch {
+    return 0;
+  }
+}
+
 export default function AlertsPanel({
   location,
   onFocus,
+  region,
+  onRegion,
 }: {
   location?: Location;
   onFocus: (lat: number, lon: number, id: string) => void;
+  region: RegionRef | null;
+  onRegion: (r: RegionRef | null) => void;
 }) {
   const { raions, oblasts, threats, alertsLoaded } = useNeptun();
+  const [tab, setTab] = useState(remembered);
   const mine = location ? locationAlerts(location, raions, oblasts) : [];
   const reasons = [...new Set(mine.flatMap((a) => a.reasons ?? []))];
   const since = mine.map((a) => a.since ?? "").sort()[0];
 
-  // One row per oblast: the whole oblast, or the raions in it that are on alert.
-  const byOblast = useMemo(() => {
-    const groups = new Map<string, { whole?: AlertRegion; raions: AlertRegion[] }>();
-    for (const o of oblasts) groups.set(o.name, { whole: o, raions: [] });
-    for (const r of raions) {
-      const group = groups.get(r.oblast) ?? { raions: [] };
-      group.raions.push(r);
-      groups.set(r.oblast, group);
-    }
-    return [...groups.entries()].sort((a, b) => a[0].localeCompare(b[0], "uk"));
-  }, [raions, oblasts]);
+  useEffect(() => {
+    const a = on("tab:targets", () => pickTab(0));
+    const b = on("tab:alerts", () => pickTab(1));
+    return () => (a(), b());
+  }, []);
 
-  const sorted = useMemo(() => {
-    const near = (x: Threat) => (location && isNear(x, location) ? 0 : 1);
-    return [...threats].sort((a, b) => near(a) - near(b) || (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""));
-  }, [threats, location]);
-
-  const counts = useMemo(() => {
-    const c = new Map<string, number>();
-    for (const x of threats) c.set(threatMeta(x.type).name, (c.get(threatMeta(x.type).name) ?? 0) + Math.max(1, x.count ?? 1));
-    return [...c.entries()];
-  }, [threats]);
+  const pickTab = (value: number) => {
+    setTab(value);
+    try {
+      localStorage.setItem("panel:tab", value === 1 ? "alerts" : "targets");
+    } catch {}
+  };
 
   return (
-    <Box sx={{ overflow: "auto", borderRight: 1, borderColor: "divider", p: 1.5 }}>
-      <Card variant="outlined" sx={{ mb: 1.5 }}>
+    <Box sx={{ overflow: "auto", borderRight: 1, borderColor: "divider", p: 1.5, pt: 1.5 }}>
+      <Card variant="outlined" sx={{ mb: 1 }}>
         <CardContent>
           <Typography variant="overline" color="text.secondary">
             {t.myLocation}
@@ -96,63 +89,18 @@ export default function AlertsPanel({
         </CardContent>
       </Card>
 
-      <List dense subheader={<ListSubheader disableSticky>{`${t.targets} · ${threats.length}`}</ListSubheader>}>
-        {counts.length > 0 && (
-          <Stack direction="row" sx={{ flexWrap: "wrap", gap: 0.5, px: 2, pb: 1 }}>
-            {counts.map(([name, n]) => (
-              <Chip key={name} size="small" label={`${name} ${n}`} />
-            ))}
-          </Stack>
-        )}
-        {threats.length === 0 && (
-          <Typography variant="body2" color="text.secondary" sx={{ px: 2 }}>
-            {t.noTargets}
-          </Typography>
-        )}
-        {sorted.map((x) => {
-          const meta = threatMeta(x.type);
-          const near = location && isNear(x, location);
-          const km =
-            location && !x.areaOnly && x.lat !== undefined && x.lon !== undefined
-              ? `${Math.round(distanceKm(location.lat, location.lon, x.lat, x.lon))} км`
-              : "";
-          const notes = [place(x), formatTime(x.updatedAt), km, x.areaOnly ? t.areaOnly : "", x.advisory ? t.advisory : ""];
-          return (
-            <ListItemButton
-              key={x.id}
-              disabled={x.areaOnly || x.lat === undefined}
-              onClick={() => onFocus(x.lat!, x.lon!, x.id)}
-              sx={{ borderRadius: 2, mb: 0.5, bgcolor: near ? "action.selected" : undefined, opacity: x.advisory ? 0.6 : 1 }}
-            >
-              <Box
-                component="span"
-                sx={{ width: 24, height: 24, mr: 1.5, flexShrink: 0, opacity: lookOf(x).fade }}
-                // Our own SVG constants, no feed text: safe as markup.
-                dangerouslySetInnerHTML={{ __html: markerSvg(lookOf(x).visual, lookOf(x).color, null, 24) }}
-              />
-              <ListItemText
-                primary={`${meta.name}${(x.count ?? 0) > 1 ? ` ×${x.count}` : ""}${near ? ` · ${t.inRadius}` : ""}`}
-                secondary={notes.filter(Boolean).join(" · ")}
-              />
-            </ListItemButton>
-          );
-        })}
-      </List>
+      <Tabs
+        value={tab}
+        onChange={(_e, v) => pickTab(v)}
+        variant="fullWidth"
+        sx={{ position: "sticky", top: -12, zIndex: 1, bgcolor: "background.default", mb: 1, borderBottom: 1, borderColor: "divider" }}
+      >
+        <Tab label={`${t.targets} · ${threats.length}`} />
+        <Tab label={`${t.alertsTab} · ${raions.length + oblasts.length}`} />
+      </Tabs>
 
-      <List dense subheader={<ListSubheader disableSticky>{`${t.activeAlerts} · ${byOblast.length}`}</ListSubheader>}>
-        {byOblast.map(([name, group]) => (
-          <ListItemText
-            key={name}
-            sx={{ px: 2, py: 0.5, m: 0 }}
-            primary={name}
-            secondary={
-              group.whole
-                ? `${t.since} ${formatTime(group.whole.since)}`
-                : group.raions.map((r) => r.name).join(", ")
-            }
-          />
-        ))}
-      </List>
+      {tab === 0 && <TargetsTab location={location} onFocus={(x) => onFocus(x.lat!, x.lon!, x.id)} />}
+      {tab === 1 && <AlertsTab selected={region} onSelect={onRegion} />}
     </Box>
   );
 }

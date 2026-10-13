@@ -3,7 +3,6 @@ import { Alert, Autocomplete, Button, Chip, IconButton, Menu, MenuItem, Paper, S
 import AddIcon from "@mui/icons-material/Add";
 import DeleteIcon from "@mui/icons-material/Delete";
 import MicIcon from "@mui/icons-material/Mic";
-import StopIcon from "@mui/icons-material/Stop";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import PauseIcon from "@mui/icons-material/Pause";
 import UploadFileIcon from "@mui/icons-material/UploadFile";
@@ -11,9 +10,33 @@ import { AUDIO_EXTENSIONS, type Preset, type Track, type Trigger } from "../shar
 import { useNeptun } from "./neptun";
 import { newId, savePreset } from "./store";
 import { audioUrl } from "./sounds";
+import Recorder, { clock } from "./Recorder";
 import { t, THREATS } from "./texts";
 
-const MAX_RECORD_MS = 30_000;
+/** A stored sound's length: "0,9 с" for the short signals, "1:05" past a minute. */
+const length = (ms: number): string => (ms < 60_000 ? `${(ms / 1000).toFixed(1).replace(".", ",")} с` : clock(ms));
+
+/**
+ * How long a stored sound is. Decoded rather than read from <audio>: a browser recording (webm)
+ * carries no duration in its header, and <audio> reports Infinity for it.
+ */
+function useDuration(presetId: string, file: string, version: number): number | null {
+  const [ms, setMs] = useState<number | null>(null);
+  useEffect(() => {
+    setMs(null);
+    if (!file) return;
+    let alive = true;
+    fetch(audioUrl(presetId, file))
+      .then((res) => res.arrayBuffer())
+      .then((bytes) => new OfflineAudioContext(1, 1, 44_100).decodeAudioData(bytes))
+      .then((buffer) => alive && setMs(buffer.duration * 1000))
+      .catch(() => alive && setMs(-1));
+    return () => {
+      alive = false;
+    };
+  }, [presetId, file, version]);
+  return ms;
+}
 
 /** One preview at a time: starting a track stops the previous one; clicking it again pauses. */
 function usePreview(presetId: string) {
@@ -115,30 +138,16 @@ function TrackRow({
   onDelete: () => void;
 }) {
   const { sources } = useNeptun();
-  const [recording, setRecording] = useState<MediaRecorder | null>(null);
+  const [recording, setRecording] = useState(false);
+  const [version, setVersion] = useState(0);
+  const soundMs = useDuration(presetId, track.file, version);
   const file = useRef<HTMLInputElement>(null);
   const { trigger } = track;
 
   const store = async (ext: string, bytes: Uint8Array) => {
     const path = await window.api.saveAudio(presetId, track.id, ext, bytes);
     onChange({ ...track, file: path });
-  };
-
-  const record = async () => {
-    if (recording) return recording.stop();
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    const recorder = new MediaRecorder(stream, { mimeType: "audio/webm;codecs=opus" });
-    const chunks: Blob[] = [];
-    recorder.ondataavailable = (e) => chunks.push(e.data);
-    recorder.onstop = async () => {
-      stream.getTracks().forEach((x) => x.stop());
-      setRecording(null);
-      const bytes = new Uint8Array(await new Blob(chunks, { type: "audio/webm" }).arrayBuffer());
-      if (bytes.byteLength > 0) await store("webm", bytes);
-    };
-    recorder.start();
-    setRecording(recorder);
-    setTimeout(() => recorder.state === "recording" && recorder.stop(), MAX_RECORD_MS);
+    setVersion((v) => v + 1);
   };
 
   const upload = async (picked?: File) => {
@@ -148,7 +157,7 @@ function TrackRow({
   };
 
   return (
-    <Paper variant="outlined" sx={{ p: 1.5 }}>
+    <Paper variant="outlined" sx={{ p: 1.5, position: "relative", overflow: "hidden", borderColor: recording ? "error.main" : undefined }}>
       <Stack direction="row" sx={{ gap: 1.5, alignItems: "center" }}>
         <Stack sx={{ flex: 1, gap: 1, minWidth: 0 }}>
           {trigger.kind === "alertStart" && <Typography>{t.trigAlertStart}</Typography>}
@@ -203,41 +212,65 @@ function TrackRow({
           )}
         </Stack>
 
-        <Typography variant="caption" color="text.secondary" sx={{ minWidth: 80, textAlign: "right" }}>
-          {track.file ? track.file.replace(/^audio\//, "") : t.noSound}
-        </Typography>
-        <Tooltip title={playing ? t.pause : t.play}>
-          <span>
-            <IconButton disabled={!track.file} color={playing ? "primary" : "default"} onClick={onPlay}>
-              {playing ? <PauseIcon /> : <PlayArrowIcon />}
-            </IconButton>
-          </span>
-        </Tooltip>
-        <Tooltip title={recording ? t.stop : t.record}>
-          <IconButton color={recording ? "error" : "default"} onClick={record}>
-            {recording ? <StopIcon /> : <MicIcon />}
-          </IconButton>
-        </Tooltip>
-        <Tooltip title={t.upload}>
-          <IconButton onClick={() => file.current?.click()}>
-            <UploadFileIcon />
-          </IconButton>
-        </Tooltip>
-        <input
-          ref={file}
-          type="file"
-          hidden
-          accept={AUDIO_EXTENSIONS.map((e) => `.${e}`).join(",")}
-          onChange={(e) => {
-            upload(e.target.files?.[0]);
-            e.target.value = "";
-          }}
-        />
-        <Tooltip title={t.delete}>
-          <IconButton onClick={onDelete}>
-            <DeleteIcon />
-          </IconButton>
-        </Tooltip>
+        {recording ? (
+          <Recorder
+            onApply={async (bytes) => {
+              await store("webm", bytes);
+              setRecording(false);
+            }}
+            onCancel={() => setRecording(false)}
+          />
+        ) : (
+          <>
+            <Stack sx={{ minWidth: 110, alignItems: "flex-end" }}>
+              <Typography variant="body2" sx={{ fontVariantNumeric: "tabular-nums" }} color={track.file ? "text.primary" : "text.secondary"}>
+                {!track.file ? t.noSound : soundMs === null ? "…" : soundMs < 0 ? t.soundReady : length(soundMs)}
+              </Typography>
+              {track.file && (
+                <Typography variant="caption" color="text.secondary">
+                  {track.file.split(".").pop()}
+                </Typography>
+              )}
+            </Stack>
+            <Tooltip title={playing ? t.pause : t.play}>
+              <span>
+                <IconButton disabled={!track.file} color={playing ? "primary" : "default"} onClick={onPlay}>
+                  {playing ? <PauseIcon /> : <PlayArrowIcon />}
+                </IconButton>
+              </span>
+            </Tooltip>
+            <Tooltip title={t.record}>
+              <IconButton
+                onClick={() => {
+                  if (playing) onPlay();
+                  setRecording(true);
+                }}
+              >
+                <MicIcon />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title={t.upload}>
+              <IconButton onClick={() => file.current?.click()}>
+                <UploadFileIcon />
+              </IconButton>
+            </Tooltip>
+            <input
+              ref={file}
+              type="file"
+              hidden
+              accept={AUDIO_EXTENSIONS.map((e) => `.${e}`).join(",")}
+              onChange={(e) => {
+                upload(e.target.files?.[0]);
+                e.target.value = "";
+              }}
+            />
+            <Tooltip title={t.delete}>
+              <IconButton onClick={onDelete}>
+                <DeleteIcon />
+              </IconButton>
+            </Tooltip>
+          </>
+        )}
       </Stack>
     </Paper>
   );

@@ -1,7 +1,8 @@
-import { useState } from "react";
-import { Box, Button, Collapse, Paper, Stack, Typography } from "@mui/material";
-import ExpandLessIcon from "@mui/icons-material/ExpandLess";
+import { useEffect, useState } from "react";
+import { on } from "./shortcuts";
+import { Box, ButtonBase, Collapse, Divider, Paper, Stack, Typography } from "@mui/material";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import LegendToggleIcon from "@mui/icons-material/LegendToggle";
 import { LEGEND, markerSvg } from "./silhouettes";
 import { t, threatMeta } from "./texts";
 
@@ -41,20 +42,58 @@ export default function Legend() {
       return false;
     }
   });
-  const toggle = () => {
-    setOpen(!open);
-    try {
-      localStorage.setItem(KEY, open ? "0" : "1");
-    } catch {}
-  };
+  const toggle = () =>
+    setOpen((was) => {
+      try {
+        localStorage.setItem(KEY, was ? "0" : "1");
+      } catch {}
+      return !was;
+    });
+  useEffect(() => on("legend", toggle), []);
 
   return (
-    <Paper elevation={4} sx={{ position: "absolute", left: 12, bottom: 28, zIndex: 2, borderRadius: 3, maxWidth: 280, overflow: "hidden" }}>
-      <Button size="small" fullWidth onClick={toggle} endIcon={open ? <ExpandMoreIcon /> : <ExpandLessIcon />} sx={{ justifyContent: "space-between", px: 1.5 }}>
-        {t.legend}
-      </Button>
-      <Collapse in={open}>
-        <Box sx={{ maxHeight: "70vh", overflowY: "auto", px: 1.5, pb: 1.5 }}>
+    <Paper
+      elevation={0}
+      sx={{
+        position: "absolute",
+        left: 12,
+        top: 12,
+        zIndex: 2,
+        borderRadius: 3,
+        width: open ? 280 : "auto",
+        overflow: "hidden",
+        // Same glass as the map's attribution: the map stays visible behind it.
+        bgcolor: "color-mix(in srgb, var(--mui-palette-background-paper) 82%, transparent)",
+        backdropFilter: "blur(8px)",
+        border: 1,
+        borderColor: "divider",
+        boxShadow: "0 4px 16px rgba(0,0,0,.3)",
+      }}
+    >
+      <ButtonBase
+        onClick={toggle}
+        aria-expanded={open}
+        sx={{
+          width: "100%",
+          gap: 1,
+          px: 1.5,
+          py: 1,
+          justifyContent: "flex-start",
+          "&:hover": { bgcolor: "action.hover" },
+        }}
+      >
+        <LegendToggleIcon fontSize="small" color="primary" />
+        <Typography variant="body2" sx={{ fontWeight: 600, flex: 1, textAlign: "left" }}>
+          {t.legend}
+        </Typography>
+        <ExpandMoreIcon
+          fontSize="small"
+          sx={{ color: "text.secondary", transition: "transform .2s", transform: open ? "rotate(180deg)" : "none" }}
+        />
+      </ButtonBase>
+      <Collapse in={open} unmountOnExit>
+        <Divider />
+        <Box sx={{ maxHeight: "calc(100vh - 190px)", overflowY: "auto", px: 1.5, pt: 1, pb: 1.5 }}>
           <Stack sx={{ gap: 0.5 }}>
             {LEGEND.map(({ visual, name, type }) => (
               <Stack key={visual} direction="row" sx={{ alignItems: "center", gap: 1 }}>

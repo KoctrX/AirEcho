@@ -1,14 +1,18 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import maplibregl, { type ExpressionSpecification, type FilterSpecification, type GeoJSONSource, type Map as MlMap } from "maplibre-gl";
 import { Box, GlobalStyles } from "@mui/material";
 import type { Feature, FeatureCollection } from "geojson";
 import type { Location } from "../shared/types";
 import type { Focus } from "./App";
-import { ahead, circleRing } from "./geo";
+import { ahead, circleRing, featureBounds, maskAround, pointInFeature } from "./geo";
+import { useApp } from "./store";
+import { typeKey } from "./TargetsTab";
+import type { RegionRef } from "./AlertsTab";
 import { useNeptun, type AlertRegion, type Place, type Threat } from "./neptun";
 import { t } from "./texts";
 import { lookOf, markerSize, markerSvg } from "./silhouettes";
 import { threatCard } from "./threatInfo";
+import { on } from "./shortcuts";
 import Legend from "./Legend";
 
 /** West, south, east, north of Ukraine, Crimea included: the "focus" view. */
@@ -186,13 +190,36 @@ function tracks(threats: Threat[]): FeatureCollection {
   return { type: "FeatureCollection", features };
 }
 
-export default function MapView({ dark, location, focus }: { dark: boolean; location?: Location; focus: Focus | null }) {
+export default function MapView({
+  dark,
+  location,
+  focus,
+  region,
+  onRegion,
+}: {
+  dark: boolean;
+  location?: Location;
+  focus: Focus | null;
+  region: RegionRef | null;
+  onRegion: (r: RegionRef | null) => void;
+}) {
   const el = useRef<HTMLDivElement>(null);
   const map = useRef<MlMap | null>(null);
   const markers = useRef<maplibregl.Marker[]>([]);
   const neptun = useNeptun();
-  const latest = useRef({ neptun, location, dark });
-  latest.current = { neptun, location, dark };
+  const { settings } = useApp();
+  // Types switched off in the targets tab are not drawn (they are still listed and voiced).
+  const shown = useMemo(() => {
+    const hidden = new Set(settings.hiddenTypes);
+    return neptun.threats.filter((x) => !hidden.has(typeKey(x.type)));
+  }, [neptun.threats, settings.hiddenTypes]);
+  const regionFeature = useMemo(() => {
+    if (!region || !neptun.catalog) return undefined;
+    const list = region.kind === "oblast" ? neptun.catalog.oblasts.features : neptun.catalog.raions.features;
+    return list.find((f) => f.properties?.key === region.key);
+  }, [region, neptun.catalog]);
+  const latest = useRef({ neptun, location, dark, shown, regionFeature, onRegion });
+  latest.current = { neptun, location, dark, shown, regionFeature, onRegion };
 
   /** The info card of one target; follows it as the feed updates, closes when it is gone. */
   const card = useRef(new maplibregl.Popup({ className: "thr-popup", maxWidth: "340px", offset: 18, focusAfterOpen: false }));
@@ -210,7 +237,7 @@ export default function MapView({ dark, location, focus }: { dark: boolean; loca
   const sync = () => {
     const m = map.current;
     if (!m || !ready.has(m)) return;
-    const { neptun: n, location: loc, dark: isDark } = latest.current;
+    const { neptun: n, location: loc, dark: isDark, shown: visible, regionFeature: picked } = latest.current;
     const before = firstLabel(m);
 
     if (n.catalog && !m.getSource("oblasts")) {
@@ -256,6 +283,17 @@ export default function MapView({ dark, location, focus }: { dark: boolean; loca
         });
       label("label-oblast", false, 4.5, 8, 11);
       label("label-raion", true, 7, 22, 11);
+      // The picked region on top of everything drawn: the rest of the map dimmed, the border traced.
+      source(m, "sel-mask");
+      source(m, "sel-line");
+      m.addLayer({ id: "sel-mask", type: "fill", source: "sel-mask", paint: { "fill-color": "#000" } });
+      m.addLayer({ id: "sel-casing", type: "line", source: "sel-line", paint: { "line-color": "#000", "line-opacity": 0.55, "line-width": 6 } });
+      m.addLayer({ id: "sel-line", type: "line", source: "sel-line", paint: { "line-color": "#fff", "line-width": 2.5 } });
+    }
+    if (m.getLayer("sel-mask")) {
+      m.setPaintProperty("sel-mask", "fill-opacity", isDark ? 0.6 : 0.4);
+      source(m, "sel-mask").setData(picked ? { type: "FeatureCollection", features: [maskAround(picked)] } : EMPTY);
+      source(m, "sel-line").setData(picked ? { type: "FeatureCollection", features: [picked as Feature] } : EMPTY);
     }
     if (m.getLayer("label-oblast")) {
       for (const id of ["label-oblast", "label-raion"]) {
@@ -269,7 +307,7 @@ export default function MapView({ dark, location, focus }: { dark: boolean; loca
       m.setPaintProperty("raion-fill", "fill-color", alertColor(n.raions, clear));
       m.setPaintProperty("oblast-line", "line-color", alertColor(n.oblasts, isDark ? "rgba(160,170,190,.45)" : "rgba(90,100,120,.45)"));
       m.setPaintProperty("raion-line", "line-color", alertColor(n.raions, clear));
-      source(m, "tracks").setData(tracks(n.threats));
+      source(m, "tracks").setData(tracks(visible));
     }
     drawLocation(m, loc);
   };
@@ -290,6 +328,8 @@ export default function MapView({ dark, location, focus }: { dark: boolean; loca
       maxZoom: 16,
       attributionControl: false,
       dragRotate: false,
+      // Shift is for picking an oblast here, not for MapLibre's shift-drag box zoom.
+      boxZoom: false,
       pitchWithRotate: false,
     });
     m.touchZoomRotate.disableRotation();
@@ -314,10 +354,35 @@ export default function MapView({ dark, location, focus }: { dark: boolean; loca
     m.on("mouseout", () => popup.remove());
     card.current.on("close", () => (cardId.current = null));
 
+    // With a region picked, a click outside it lets go and brings the whole country back.
+    m.on("click", (e) => {
+      // Shift+click picks the oblast under the cursor, Ctrl+click the raion.
+      const mods = e.originalEvent as MouseEvent;
+      if (mods.shiftKey || mods.ctrlKey || mods.metaKey) {
+        const kind = mods.shiftKey ? "oblast" : "raion";
+        const layer = `${kind}-fill`;
+        const hit = m.getLayer(layer) ? m.queryRenderedFeatures(e.point, { layers: [layer] })[0] : undefined;
+        const key = hit?.properties?.key as string | undefined;
+        if (key) latest.current.onRegion({ kind, key });
+        return;
+      }
+      const picked = latest.current.regionFeature;
+      if (!picked || pointInFeature(e.lngLat.lat, e.lngLat.lng, picked)) return;
+      latest.current.onRegion(null);
+      m.fitBounds(UKRAINE, FIT);
+    });
+
     map.current = m;
-    const resize = new ResizeObserver(() => m.resize());
+    const offFit = on("fit", () => m.fitBounds(UKRAINE, FIT));
+    // Resizing the canvas clears it; redraw in the same frame, or a panel being dragged makes the map
+    // blink empty on every step.
+    const resize = new ResizeObserver(() => {
+      m.resize();
+      m.redraw();
+    });
     resize.observe(el.current!);
     return () => {
+      offFit();
       resize.disconnect();
       m.remove();
     };
@@ -330,11 +395,22 @@ export default function MapView({ dark, location, focus }: { dark: boolean; loca
     if (map.current) setStyle(map.current, dark);
   }, [dark]);
 
-  useEffect(sync, [neptun.catalog, neptun.oblasts, neptun.raions, neptun.threats, location, dark]);
+  useEffect(sync, [neptun.catalog, neptun.oblasts, neptun.raions, shown, location, dark, regionFeature]);
+
+  // Picking a region flies to it; Esc lets go.
+  useEffect(() => {
+    if (regionFeature) map.current?.fitBounds(featureBounds(regionFeature), { padding: 60, duration: 700, maxZoom: 10 });
+  }, [regionFeature]);
+  useEffect(() => {
+    if (!region) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onRegion(null);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [region, onRegion]);
 
   useEffect(() => {
     for (const marker of markers.current) marker.remove();
-    markers.current = neptun.threats.flatMap((x) => {
+    markers.current = shown.flatMap((x) => {
       const lat = finite(x.lat);
       const lon = finite(x.lon);
       // A record that only names an oblast has no place: it is listed, not drawn.
@@ -342,16 +418,23 @@ export default function MapView({ dark, location, focus }: { dark: boolean; loca
       const element = threatElement(x);
       element.addEventListener("click", (e) => {
         e.stopPropagation();
+        // A target outside the picked region: let the region go and fly to the target. One inside
+        // it just opens its card — the region stays.
+        const picked = latest.current.regionFeature;
+        if (picked && !pointInFeature(lat, lon, picked)) {
+          latest.current.onRegion(null);
+          map.current?.flyTo({ center: [lon, lat], zoom: 8.5, duration: 800 });
+        }
         showCard(x);
       });
       return [new maplibregl.Marker({ element }).setLngLat([lon, lat]).addTo(map.current!)];
     });
     if (cardId.current) {
-      const open = neptun.threats.find((x) => x.id === cardId.current);
+      const open = shown.find((x) => x.id === cardId.current);
       if (open) showCard(open, false);
       else card.current.remove();
     }
-  }, [neptun.threats]);
+  }, [shown]);
 
   useEffect(() => {
     if (!focus) return;
@@ -365,8 +448,29 @@ export default function MapView({ dark, location, focus }: { dark: boolean; loca
       <GlobalStyles
         styles={{
           ".maplibregl-map": { fontFamily: "inherit" },
-          ".maplibregl-ctrl-attrib": { fontSize: 11 },
-          ".region-tip .maplibregl-popup-content": { padding: "4px 8px", fontSize: 12, color: "#222" },
+          // MapLibre's own white boxes, restyled to the app's theme.
+          ".maplibregl-ctrl.maplibregl-ctrl-attrib": {
+            margin: "0 8px 8px 0",
+            padding: "3px 10px",
+            borderRadius: 8,
+            fontSize: 11,
+            background: "color-mix(in srgb, var(--mui-palette-background-paper) 80%, transparent)",
+            backdropFilter: "blur(6px)",
+            border: "1px solid var(--mui-palette-divider)",
+            color: "var(--mui-palette-text-secondary)",
+            boxShadow: "0 1px 4px rgba(0,0,0,.25)",
+          },
+          ".maplibregl-ctrl-attrib a": { color: "var(--mui-palette-text-secondary)" },
+          ".maplibregl-ctrl-attrib a:hover": { color: "var(--mui-palette-primary-main)" },
+          ".maplibregl-ctrl-attrib a[href*='neptun']": { color: "var(--mui-palette-primary-main)", fontWeight: 600 },
+          ".region-tip .maplibregl-popup-content": {
+            padding: "5px 10px",
+            borderRadius: 8,
+            fontSize: 12,
+            background: "var(--mui-palette-background-paper)",
+            color: "var(--mui-palette-text-primary)",
+            boxShadow: "0 2px 10px rgba(0,0,0,.35)",
+          },
           ".region-tip .maplibregl-popup-tip": { display: "none" },
           ".thr-popup .maplibregl-popup-tip": { display: "none" },
           ".thr-popup .maplibregl-popup-content": {
