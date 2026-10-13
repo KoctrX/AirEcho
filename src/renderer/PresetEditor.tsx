@@ -1,0 +1,244 @@
+import { useEffect, useRef, useState } from "react";
+import { Alert, Autocomplete, Button, Chip, IconButton, Menu, MenuItem, Paper, Stack, TextField, Tooltip, Typography } from "@mui/material";
+import AddIcon from "@mui/icons-material/Add";
+import DeleteIcon from "@mui/icons-material/Delete";
+import MicIcon from "@mui/icons-material/Mic";
+import StopIcon from "@mui/icons-material/Stop";
+import PlayArrowIcon from "@mui/icons-material/PlayArrow";
+import PauseIcon from "@mui/icons-material/Pause";
+import UploadFileIcon from "@mui/icons-material/UploadFile";
+import { AUDIO_EXTENSIONS, type Preset, type Track, type Trigger } from "../shared/types";
+import { useNeptun } from "./neptun";
+import { newId, savePreset } from "./store";
+import { audioUrl } from "./sounds";
+import { t, THREATS } from "./texts";
+
+const MAX_RECORD_MS = 30_000;
+
+/** One preview at a time: starting a track stops the previous one; clicking it again pauses. */
+function usePreview(presetId: string) {
+  const audio = useRef<HTMLAudioElement | null>(null);
+  const [now, setNow] = useState<{ id: string; paused: boolean } | null>(null);
+  const [error, setError] = useState("");
+
+  const stop = () => {
+    audio.current?.pause();
+    audio.current = null;
+    setNow(null);
+  };
+  useEffect(() => stop, []);
+
+  const toggle = (track: Track) => {
+    setError("");
+    const a = audio.current;
+    if (a && now?.id === track.id) {
+      if (a.paused) a.play().then(() => setNow({ id: track.id, paused: false }), fail);
+      else {
+        a.pause();
+        setNow({ id: track.id, paused: true });
+      }
+      return;
+    }
+    stop();
+    const next = new Audio(audioUrl(presetId, track.file));
+    next.onended = () => {
+      if (audio.current === next) stop();
+    };
+    audio.current = next;
+    setNow({ id: track.id, paused: false });
+    next.play().catch(fail);
+
+    function fail(e: Error) {
+      console.error("preview failed", track.file, e, next.error);
+      setError(`${t.playFailed}: ${next.error?.message || e.message}`);
+      stop();
+    }
+  };
+
+  return { playing: (id: string) => now?.id === id && !now.paused, toggle, error };
+}
+
+export default function PresetEditor({ preset }: { preset: Preset }) {
+  const [menu, setMenu] = useState<HTMLElement | null>(null);
+  const preview = usePreview(preset.id);
+
+  const update = (track: Track) => savePreset({ ...preset, tracks: preset.tracks.map((x) => (x.id === track.id ? track : x)) });
+  const remove = (id: string) => savePreset({ ...preset, tracks: preset.tracks.filter((x) => x.id !== id) });
+  const add = (trigger: Trigger) => {
+    setMenu(null);
+    savePreset({ ...preset, tracks: [...preset.tracks, { id: newId(), trigger, file: "" }] });
+  };
+  const unusedType = Object.keys(THREATS).find(
+    (type) => !preset.tracks.some((x) => x.trigger.kind === "threat" && x.trigger.type === type),
+  );
+
+  return (
+    <Stack sx={{ gap: 1 }}>
+      {preview.error && <Alert severity="error">{preview.error}</Alert>}
+      {preset.tracks.map((track) => (
+        <TrackRow
+          key={track.id}
+          presetId={preset.id}
+          track={track}
+          playing={preview.playing(track.id)}
+          onPlay={() => preview.toggle(track)}
+          onChange={update}
+          onDelete={() => remove(track.id)}
+        />
+      ))}
+      <Button startIcon={<AddIcon />} onClick={(e) => setMenu(e.currentTarget)} sx={{ alignSelf: "flex-start" }}>
+        {t.addTrack}
+      </Button>
+      <Menu anchorEl={menu} open={menu !== null} onClose={() => setMenu(null)}>
+        <MenuItem onClick={() => add({ kind: "alertStart" })}>{t.trigAlertStart}</MenuItem>
+        <MenuItem onClick={() => add({ kind: "alertEnd" })}>{t.trigAlertEnd}</MenuItem>
+        <MenuItem onClick={() => add({ kind: "threat", type: unusedType ?? "unknown" })}>{t.trigThreat}</MenuItem>
+        <MenuItem onClick={() => add({ kind: "keyword", channels: [], keywords: [] })}>{t.trigKeyword}</MenuItem>
+      </Menu>
+    </Stack>
+  );
+}
+
+function TrackRow({
+  presetId,
+  track,
+  playing,
+  onPlay,
+  onChange,
+  onDelete,
+}: {
+  presetId: string;
+  track: Track;
+  playing: boolean;
+  onPlay: () => void;
+  onChange: (track: Track) => void;
+  onDelete: () => void;
+}) {
+  const { sources } = useNeptun();
+  const [recording, setRecording] = useState<MediaRecorder | null>(null);
+  const file = useRef<HTMLInputElement>(null);
+  const { trigger } = track;
+
+  const store = async (ext: string, bytes: Uint8Array) => {
+    const path = await window.api.saveAudio(presetId, track.id, ext, bytes);
+    onChange({ ...track, file: path });
+  };
+
+  const record = async () => {
+    if (recording) return recording.stop();
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const recorder = new MediaRecorder(stream, { mimeType: "audio/webm;codecs=opus" });
+    const chunks: Blob[] = [];
+    recorder.ondataavailable = (e) => chunks.push(e.data);
+    recorder.onstop = async () => {
+      stream.getTracks().forEach((x) => x.stop());
+      setRecording(null);
+      const bytes = new Uint8Array(await new Blob(chunks, { type: "audio/webm" }).arrayBuffer());
+      if (bytes.byteLength > 0) await store("webm", bytes);
+    };
+    recorder.start();
+    setRecording(recorder);
+    setTimeout(() => recorder.state === "recording" && recorder.stop(), MAX_RECORD_MS);
+  };
+
+  const upload = async (picked?: File) => {
+    const ext = picked?.name.split(".").pop()?.toLowerCase() ?? "";
+    if (!picked || !AUDIO_EXTENSIONS.includes(ext)) return;
+    await store(ext, new Uint8Array(await picked.arrayBuffer()));
+  };
+
+  return (
+    <Paper variant="outlined" sx={{ p: 1.5 }}>
+      <Stack direction="row" sx={{ gap: 1.5, alignItems: "center" }}>
+        <Stack sx={{ flex: 1, gap: 1, minWidth: 0 }}>
+          {trigger.kind === "alertStart" && <Typography>{t.trigAlertStart}</Typography>}
+          {trigger.kind === "alertEnd" && <Typography>{t.trigAlertEnd}</Typography>}
+          {trigger.kind === "threat" && (
+            <TextField
+              select
+              size="small"
+              label={t.trigThreat}
+              value={trigger.type}
+              onChange={(e) => onChange({ ...track, trigger: { kind: "threat", type: e.target.value } })}
+              sx={{ maxWidth: 280 }}
+            >
+              {Object.entries(THREATS).map(([type, meta]) => (
+                <MenuItem key={type} value={type}>
+                  {meta.name}
+                </MenuItem>
+              ))}
+            </TextField>
+          )}
+          {trigger.kind === "keyword" && (
+            <>
+              <Typography variant="body2" color="text.secondary">
+                {t.trigKeyword}
+              </Typography>
+              <Autocomplete
+                multiple
+                freeSolo
+                size="small"
+                options={sources.map((s) => s.handle.toLowerCase())}
+                value={trigger.channels}
+                onChange={(_e, channels) =>
+                  onChange({ ...track, trigger: { ...trigger, channels: channels.map((c) => c.toLowerCase()) } })
+                }
+                renderInput={(params) => <TextField {...params} label={t.channels} />}
+              />
+              <Autocomplete
+                multiple
+                freeSolo
+                size="small"
+                options={[]}
+                value={trigger.keywords}
+                onChange={(_e, keywords) =>
+                  onChange({ ...track, trigger: { ...trigger, keywords: keywords.map((k) => k.trim()).filter(Boolean) } })
+                }
+                renderValue={(values, getItemProps) =>
+                  values.map((value, index) => <Chip size="small" label={value} {...getItemProps({ index })} key={value} />)
+                }
+                renderInput={(params) => <TextField {...params} label={t.keywords} helperText={t.keywordsHint} />}
+              />
+            </>
+          )}
+        </Stack>
+
+        <Typography variant="caption" color="text.secondary" sx={{ minWidth: 80, textAlign: "right" }}>
+          {track.file ? track.file.replace(/^audio\//, "") : t.noSound}
+        </Typography>
+        <Tooltip title={playing ? t.pause : t.play}>
+          <span>
+            <IconButton disabled={!track.file} color={playing ? "primary" : "default"} onClick={onPlay}>
+              {playing ? <PauseIcon /> : <PlayArrowIcon />}
+            </IconButton>
+          </span>
+        </Tooltip>
+        <Tooltip title={recording ? t.stop : t.record}>
+          <IconButton color={recording ? "error" : "default"} onClick={record}>
+            {recording ? <StopIcon /> : <MicIcon />}
+          </IconButton>
+        </Tooltip>
+        <Tooltip title={t.upload}>
+          <IconButton onClick={() => file.current?.click()}>
+            <UploadFileIcon />
+          </IconButton>
+        </Tooltip>
+        <input
+          ref={file}
+          type="file"
+          hidden
+          accept={AUDIO_EXTENSIONS.map((e) => `.${e}`).join(",")}
+          onChange={(e) => {
+            upload(e.target.files?.[0]);
+            e.target.value = "";
+          }}
+        />
+        <Tooltip title={t.delete}>
+          <IconButton onClick={onDelete}>
+            <DeleteIcon />
+          </IconButton>
+        </Tooltip>
+      </Stack>
+    </Paper>
+  );
+}

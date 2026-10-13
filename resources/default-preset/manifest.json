@@ -1,0 +1,86 @@
+{
+  "format": "airecho-preset",
+  "version": 1,
+  "id": "default",
+  "name": "Стандартний",
+  "tracks": [
+    {
+      "id": "alert_start",
+      "trigger": {
+        "kind": "alertStart"
+      },
+      "file": "audio/alert_start.wav"
+    },
+    {
+      "id": "alert_end",
+      "trigger": {
+        "kind": "alertEnd"
+      },
+      "file": "audio/alert_end.wav"
+    },
+    {
+      "id": "ballistic",
+      "trigger": {
+        "kind": "threat",
+        "type": "ballistic"
+      },
+      "file": "audio/ballistic.wav"
+    },
+    {
+      "id": "missile",
+      "trigger": {
+        "kind": "threat",
+        "type": "missile"
+      },
+      "file": "audio/missile.wav"
+    },
+    {
+      "id": "kab",
+      "trigger": {
+        "kind": "threat",
+        "type": "kab"
+      },
+      "file": "audio/kab.wav"
+    },
+    {
+      "id": "mig31k",
+      "trigger": {
+        "kind": "threat",
+        "type": "mig31k"
+      },
+      "file": "audio/mig31k.wav"
+    },
+    {
+      "id": "uav",
+      "trigger": {
+        "kind": "threat",
+        "type": "uav"
+      },
+      "file": "audio/uav.wav"
+    },
+    {
+      "id": "recon",
+      "trigger": {
+        "kind": "threat",
+        "type": "recon"
+      },
+      "file": "audio/recon.wav"
+    },
+    {
+      "id": "fpv",
+      "trigger": {
+        "kind": "threat",
+        "type": "fpv"
+      },
+      "file": "audio/fpv.wav"
+    },
+    {
+      "id": "unknown",
+      "trigger": {
+        "kind": "threat",
+        "type": "unknown"
+      },
+      "file": "audio/unknown.wav"
+    }
+  ]
+}
