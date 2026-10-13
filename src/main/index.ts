@@ -23,6 +23,8 @@ protocol.registerSchemesAsPrivileged([
 
 if (!app.requestSingleInstanceLock()) app.quit();
 app.on("second-instance", showWindow);
+// macOS: clicking the dock icon brings back the window hidden to the tray.
+app.on("activate", showWindow);
 app.setAppUserModelId("ua.airecho.app");
 
 function showWindow(): void {
@@ -202,7 +204,11 @@ function createWindow(): void {
 app.on("before-quit", () => (quitting = true));
 
 app.whenReady().then(async () => {
-  Menu.setApplicationMenu(null);
+  // No menu bar on Linux/Windows. macOS keeps the standard one: without its Edit menu, Cmd+C/V do
+  // not work in text fields, and without the app menu there is no Cmd+Q.
+  Menu.setApplicationMenu(
+    process.platform === "darwin" ? Menu.buildFromTemplate([{ role: "appMenu" }, { role: "editMenu" }, { role: "windowMenu" }]) : null,
+  );
   await ensureDefaultPreset();
   nativeTheme.themeSource = (await readJson<Partial<Settings>>(settingsFile, {})).theme ?? "system";
   registerIpc();

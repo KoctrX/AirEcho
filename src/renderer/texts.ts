@@ -28,8 +28,8 @@ export const SOURCE_KINDS: Record<string, string> = {
 };
 
 declare const __APP_VERSION__: string;
-/** From package.json at build time, shown as "v1.0.0". */
-export const APP_VERSION = `v${__APP_VERSION__}`;
+/** From package.json at build time, shown as "v1.0.0". Tests run without the build's define. */
+export const APP_VERSION = typeof __APP_VERSION__ === "string" ? `v${__APP_VERSION__}` : "dev";
 
 export const t = {
   appName: "AirEcho",
