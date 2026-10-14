@@ -2,6 +2,7 @@
 node_modules
 out
 dist
+dist-web
 
 # Local notes and plans, not part of the app
 PLAN.md

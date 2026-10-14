@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import {
+  Alert,
   AppBar,
   Box,
+  Button,
   Chip,
   CssBaseline,
   IconButton,
@@ -134,6 +136,43 @@ function Resizer({ side, at, onWidth }: { side: "left" | "right"; at: number; on
 }
 
 export type Focus = { lat: number; lon: number; at: number; id?: string };
+
+/**
+ * Browser build only: what the desktop app does by itself, a page cannot — sound plays only after
+ * the first click, notifications need permission, and nothing runs once the tab is closed.
+ */
+function WebNotice() {
+  const [armed, setArmed] = useState(false);
+  useEffect(() => {
+    const arm = () => {
+      setArmed(true);
+      if ("Notification" in window && Notification.permission === "default") Notification.requestPermission();
+    };
+    window.addEventListener("pointerdown", arm, { once: true });
+    window.addEventListener("keydown", arm, { once: true });
+    return () => {
+      window.removeEventListener("pointerdown", arm);
+      window.removeEventListener("keydown", arm);
+    };
+  }, []);
+  if (armed) return null;
+  return (
+    <Alert
+      severity="info"
+      variant="filled"
+      sx={{ borderRadius: 0, py: 0 }}
+      action={
+        <Button color="inherit" size="small" href={RELEASES} target="_blank">
+          {t.webDownload}
+        </Button>
+      }
+    >
+      {t.webNotice}
+    </Alert>
+  );
+}
+
+const RELEASES = "https://github.com/KoctrX/AirEcho/releases/latest";
 
 /** "оновлено 12 с тому" next to the connection chip: how fresh the data is, ticking every second. */
 function Freshness() {
@@ -360,7 +399,7 @@ function Shell() {
   }, [loaded, neptun, location, preset]);
 
   return (
-    <Box sx={{ height: "100vh", display: "grid", gridTemplateRows: "auto 1fr", bgcolor: "background.default" }}>
+    <Box sx={{ height: "100vh", display: "grid", gridTemplateRows: "auto auto 1fr", bgcolor: "background.default" }}>
       <AppBar position="static" color="inherit" elevation={0} sx={{ borderBottom: 1, borderColor: "divider" }}>
         <Toolbar variant="dense" sx={{ gap: 1.5, position: "relative" }}>
           <FullscreenClock />
@@ -404,6 +443,7 @@ function Shell() {
           </Tooltip>
         </Toolbar>
       </AppBar>
+      {window.api.web ? <WebNotice /> : <span />}
 
       <Box
         sx={{

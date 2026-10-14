@@ -8,7 +8,9 @@
 
 ## Завантажити
 
-**[⬇ Остання версія на сторінці релізів](https://github.com/KoctrX/AirEcho/releases/latest)**
+**[⬇ Остання версія на сторінці релізів](https://github.com/KoctrX/AirEcho/releases/latest)** · **[🌐 Відкрити в браузері](https://koctrx.github.io/AirEcho/)**
+
+Браузерна версія — без встановлення, але вкладку треба тримати відкритою, а звук вмикається після першого кліку по сторінці. Налаштування й пресети зберігаються в самому браузері.
 
 | Система | Файл |
 |---|---|
@@ -45,6 +47,8 @@ npm test           # тести рушія озвучки та імпорту п
 npm run dist:linux # AppImage + deb у dist/
 npm run dist:win   # інсталятор NSIS (на Windows)
 npm run dist:mac   # dmg для Apple Silicon та Intel (на macOS)
+npm run web:dev    # браузерна версія локально
+npm run web:build  # браузерна версія в dist-web/ (на GitHub Pages збирається автоматично)
 ```
 
 Стандартні сигнали в `resources/default-preset` згенеровано скриптом `scripts/make_assets.py`. Вони вільні від прав (CC0).

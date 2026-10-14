@@ -178,4 +178,4 @@ export function createAnnouncer(onClick: () => void, muted: () => boolean) {
 }
 
 export const audioUrl = (presetId: string, file: string): string =>
-  `airecho://preset/${presetId}/${file}?v=${Date.now()}`;
+  window.api.audioUrl?.(presetId, file) ?? `airecho://preset/${presetId}/${file}?v=${Date.now()}`;

@@ -85,4 +85,8 @@ export interface Api {
   /** NEPTUN boundary GeoJSON, fetched by the main process (no CORS on those files). */
   getGeo(name: "oblasts" | "raions"): Promise<import("geojson").FeatureCollection>;
   showWindow(): void;
+  /** Browser build only: a ready URL for a stored sound (Electron serves them as airecho://). */
+  audioUrl?(presetId: string, file: string): string;
+  /** True in the browser build: no tray, sound needs a click first, the tab must stay open. */
+  web?: boolean;
 }
