@@ -49,6 +49,9 @@ export default function SettingsDialog({ open, onClose, dark }: { open: { tab?: 
   const [tab, setTab] = useState(0);
   // On a phone the settings take the whole screen: a dialog over a 360 px map helps nobody.
   const phone = useMediaQuery(useTheme().breakpoints.down("sm"));
+  // Shortcuts only where there is a keyboard and mouse: by the input device, not the width (a
+  // narrow window on a PC still has keys; a tablet in landscape does not).
+  const hasKeys = useMediaQuery("(hover: hover) and (pointer: fine)");
   // Opened for a given tab (the "?" shortcut opens the keys); otherwise where it was left.
   useEffect(() => {
     if (open?.tab !== undefined) setTab(open.tab);
@@ -74,14 +77,14 @@ export default function SettingsDialog({ open, onClose, dark }: { open: { tab?: 
         <Tab label={t.tabGeneral} />
         <Tab label={t.tabChannels} />
         <Tab label={t.tabSounds} />
-        <Tab label={t.tabKeys} />
+        {hasKeys && <Tab label={t.tabKeys} />}
       </Tabs>
       <DialogContent>
         {tab === 0 && <LocationsTab dark={dark} />}
         {tab === 1 && <LookTab />}
         {tab === 2 && <ChannelFilter />}
         {tab === 3 && <SoundsTab />}
-        {tab === 4 && <KeysTab />}
+        {tab === 4 && hasKeys && <KeysTab />}
       </DialogContent>
       <DialogActions>
         <Typography variant="caption" color="text.secondary" sx={{ flex: 1, pl: 2 }}>
