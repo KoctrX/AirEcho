@@ -13,7 +13,7 @@ export const openChannel = (handle: string): void => {
 
 /** `channels` null shows every channel. */
 export default function FeedPanel({ channels }: { channels: string[] | null }) {
-  const { messages, sources } = useNeptun();
+  const { messages, sources, feedDown } = useNeptun();
   const [filterAt, setFilterAt] = useState<HTMLElement | null>(null);
   const titles = useMemo(() => new Map(sources.map((s) => [s.handle.toLowerCase(), s.title])), [sources]);
   const shown = useMemo(() => {
@@ -46,7 +46,12 @@ export default function FeedPanel({ channels }: { channels: string[] | null }) {
       >
         <ChannelFilter />
       </Popover>
-      {shown.length === 0 && (
+      {feedDown && (
+        <Typography variant="body2" color="warning.main" sx={{ px: 0.5, mb: 1 }}>
+          {t.feedDown}
+        </Typography>
+      )}
+      {shown.length === 0 && !feedDown && (
         <Typography variant="body2" color="text.secondary" sx={{ px: 0.5 }}>
           {t.feedEmpty}
         </Typography>

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Button, Checkbox, FormControlLabel, List, ListItem, ListItemText, ListSubheader, Stack, Switch, TextField } from "@mui/material";
+import { Button, Checkbox, FormControlLabel, List, ListItem, ListItemText, ListSubheader, Stack, Switch, TextField, Typography } from "@mui/material";
 import { useNeptun } from "./neptun";
 import { saveSettings, useApp } from "./store";
 import { SOURCE_KINDS, t } from "./texts";
@@ -71,6 +71,11 @@ export default function ChannelFilter() {
             </Button>
           </Stack>
         </>
+      )}
+      {filtered && sources.length === 0 && (
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 1.5 }}>
+          {t.sourcesLoading}
+        </Typography>
       )}
       {filtered &&
         kinds.map((kind) => {

@@ -97,6 +97,8 @@ export interface NeptunState {
   /** False until the first real answer: an empty list before it means "not known", not "none". */
   alertsLoaded: boolean;
   threatsLoaded: boolean;
+  /** The last poll of the channel feed failed (NEPTUN down or refusing): say so instead of "no posts". */
+  feedDown: boolean;
   raions: AlertRegion[];
   oblasts: AlertRegion[];
   threats: Threat[];
@@ -109,6 +111,7 @@ let state: NeptunState = {
   connected: false,
   alertsLoaded: false,
   threatsLoaded: false,
+  feedDown: false,
   raions: [],
   oblasts: [],
   threats: [],
@@ -246,6 +249,7 @@ const messageKey = (m: FeedMessage): string => `${m.channel}|${m.date}|${m.text}
 async function pollMessages(): Promise<void> {
   const data = await getJson<{ messages?: FeedMessage[] }>("/api/v1/messages");
   if (data) heard();
+  if (state.feedDown !== !data) set({ feedDown: !data });
   const fresh = (data?.messages ?? []).filter((m) => typeof m?.text === "string" && m.text.trim() !== "");
   if (fresh.length === 0) return;
   const seen = new Set(state.messages.map(messageKey));
@@ -267,13 +271,22 @@ async function pollFallback(): Promise<void> {
   replaceThreats(list?.threats);
 }
 
+/**
+ * The channel catalogue, asked again until NEPTUN answers. On its own, not with the borders: those
+ * come from a bundled copy and always succeed, so a failed first try would never have been retried.
+ */
+async function loadSources(): Promise<void> {
+  const data = await getJson<{ sources?: FeedSource[] }>("/api/v1/sources");
+  const sources = (data?.sources ?? []).filter((s) => typeof s?.handle === "string" && s.handle !== "");
+  if (sources.length > 0) set({ sources });
+  else setTimeout(loadSources, POLL_MS);
+}
+
 async function loadCatalog(): Promise<void> {
-  const [oblasts, raions, sources] = await Promise.all([
+  const [oblasts, raions] = await Promise.all([
     window.api.getGeo("oblasts").catch(() => null),
     window.api.getGeo("raions").catch(() => null),
-    getJson<{ sources?: FeedSource[] }>("/api/v1/sources"),
   ]);
-  set({ sources: (sources?.sources ?? []).filter((s) => typeof s?.handle === "string" && s.handle !== "") });
   if (!oblasts || !raions) return void setTimeout(loadCatalog, POLL_MS);
 
   const props = (f: Feature<Geometry | null>) => (f.properties ?? {}) as Record<string, string>;
@@ -338,6 +351,7 @@ export function start(): void {
   started = true;
   connect();
   loadCatalog();
+  loadSources();
   pollMessages();
   // The socket usually answers first; the REST fallback only steps in if it has not.
   pollTimer = setTimeout(poll, 2000);

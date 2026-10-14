@@ -88,6 +88,8 @@ export const t = {
   advisory: "спостереження",
   feed: "Канали",
   feedEmpty: "Повідомлень поки немає",
+  feedDown: "NEPTUN зараз не віддає стрічку каналів — повторюю…",
+  sourcesLoading: "Список каналів ще не отримано від NEPTUN — повторюю…",
   openInTelegram: "Відкрити в Telegram",
   attribution: 'Дані: <a href="https://neptun.in.ua">NEPTUN</a> · не є офіційною системою оповіщення',
   // Settings
