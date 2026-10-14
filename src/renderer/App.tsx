@@ -2,6 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import {
   Alert,
   AppBar,
+  Badge,
+  BottomNavigation,
+  BottomNavigationAction,
   Box,
   Button,
   Chip,
@@ -18,6 +21,8 @@ import {
   Tooltip,
   Typography,
   createTheme,
+  useMediaQuery,
+  useTheme,
   useColorScheme,
 } from "@mui/material";
 import SettingsIcon from "@mui/icons-material/Settings";
@@ -26,11 +31,17 @@ import PlaceIcon from "@mui/icons-material/Place";
 import ViewSidebarIcon from "@mui/icons-material/ViewSidebar";
 import ViewSidebarOutlinedIcon from "@mui/icons-material/ViewSidebarOutlined";
 import VolumeUpIcon from "@mui/icons-material/VolumeUp";
+import MapIcon from "@mui/icons-material/Map";
+import NotificationsActiveIcon from "@mui/icons-material/NotificationsActive";
+import ForumIcon from "@mui/icons-material/Forum";
+import InstallDesktopIcon from "@mui/icons-material/InstallDesktop";
+import InstallMobileIcon from "@mui/icons-material/InstallMobile";
 import VolumeOffIcon from "@mui/icons-material/VolumeOff";
 import { lastUpdate, setPollInterval, start, useNeptun } from "./neptun";
 import { isMuted } from "../shared/types";
 import { getApp, loadApp, saveSettings, useApp } from "./store";
 import { emit, typing } from "./shortcuts";
+import { useInstall } from "./install";
 import { audioUrl, createAnnouncer, createDetector, describe, matchTrack } from "./sounds";
 import { APP_VERSION, t } from "./texts";
 import MapView from "./MapView";
@@ -141,7 +152,7 @@ export type Focus = { lat: number; lon: number; at: number; id?: string };
  * Browser build only: what the desktop app does by itself, a page cannot — sound plays only after
  * the first click, notifications need permission, and nothing runs once the tab is closed.
  */
-function WebNotice() {
+function WebNotice({ mobile }: { mobile: boolean }) {
   const [armed, setArmed] = useState(false);
   useEffect(() => {
     const arm = () => {
@@ -162,9 +173,11 @@ function WebNotice() {
       variant="filled"
       sx={{ borderRadius: 0, py: 0 }}
       action={
-        <Button color="inherit" size="small" href={RELEASES} target="_blank">
-          {t.webDownload}
-        </Button>
+        mobile ? undefined : (
+          <Button color="inherit" size="small" href={RELEASES} target="_blank">
+            {t.webDownload}
+          </Button>
+        )
       }
     >
       {t.webNotice}
@@ -362,6 +375,12 @@ function Shell() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  const theme = useTheme();
+  // Phones and narrow windows: one view at a time with a bottom bar instead of three columns.
+  const mobile = useMediaQuery(theme.breakpoints.down("md"));
+  const [view, setView] = useState<"map" | "panel" | "feed">("map");
+  const install = useInstall();
+
   const [widths, setWidths] = useState({ left: storedWidth("left"), right: storedWidth("right") });
   const setWidth = (side: "left" | "right") => (w: number) => {
     setWidths((was) => ({ ...was, [side]: w }));
@@ -398,29 +417,67 @@ function Shell() {
     }
   }, [loaded, neptun, location, preset]);
 
+  const panel = (
+    <AlertsPanel
+      location={location}
+      onFocus={(lat, lon, id) => {
+        setFocus({ lat, lon, id, at: Date.now() });
+        setView("map");
+      }}
+      region={region}
+      onRegion={(r) => {
+        setRegion(r);
+        if (r) setView("map");
+      }}
+    />
+  );
+  const feed = <FeedPanel channels={settings.channelsFiltered ? settings.channels : null} />;
+  const map = <MapView dark={dark} location={location} focus={focus} region={region} onRegion={setRegion} />;
+
   return (
-    <Box sx={{ height: "100vh", display: "grid", gridTemplateRows: "auto auto 1fr", bgcolor: "background.default" }}>
-      <AppBar position="static" color="inherit" elevation={0} sx={{ borderBottom: 1, borderColor: "divider" }}>
-        <Toolbar variant="dense" sx={{ gap: 1.5, position: "relative" }}>
+    <Box
+      sx={{
+        // dvh: on phones 100vh includes the part hidden behind the browser's own bars.
+        height: "100dvh",
+        display: "grid",
+        gridTemplateRows: mobile ? "auto auto 1fr auto" : "auto auto 1fr",
+        bgcolor: "background.default",
+      }}
+    >
+      <AppBar
+        position="static"
+        color="inherit"
+        elevation={0}
+        sx={{ borderBottom: 1, borderColor: "divider", pt: "env(safe-area-inset-top)" }}
+      >
+        <Toolbar variant="dense" sx={{ gap: mobile ? 1 : 1.5, position: "relative", px: mobile ? 1.5 : undefined }}>
           <FullscreenClock />
-          <PanelToggle open={left} onClick={toggleLeft} title={t.toggleLeft} mirror />
+          {!mobile && <PanelToggle open={left} onClick={toggleLeft} title={t.toggleLeft} mirror />}
           <CampaignIcon color="primary" />
           <Typography variant="h6" sx={{ fontWeight: 600 }}>
             {t.appName}
           </Typography>
-          <Typography variant="caption" color="text.secondary" sx={{ ml: -0.75, mt: 0.5 }}>
-            {APP_VERSION}
-          </Typography>
-          <Chip
-            size="small"
-            color={neptun.connected ? "success" : "warning"}
-            variant="outlined"
-            label={neptun.connected ? t.online : t.offline}
-          />
-          <Freshness />
+          {!mobile && (
+            <Typography variant="caption" color="text.secondary" sx={{ ml: -0.75, mt: 0.5 }}>
+              {APP_VERSION}
+            </Typography>
+          )}
+          {mobile ? (
+            <Tooltip title={neptun.connected ? t.online : t.offline}>
+              <Box sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: neptun.connected ? "success.main" : "warning.main" }} />
+            </Tooltip>
+          ) : (
+            <Chip
+              size="small"
+              color={neptun.connected ? "success" : "warning"}
+              variant="outlined"
+              label={neptun.connected ? t.online : t.offline}
+            />
+          )}
+          {!mobile && <Freshness />}
           <Box sx={{ flex: 1 }} />
-          {location && <Chip size="small" icon={<PlaceIcon />} label={location.name} />}
-          {presets.length > 0 && (
+          {!mobile && location && <Chip size="small" icon={<PlaceIcon />} label={location.name} />}
+          {!mobile && presets.length > 0 && (
             <Select
               size="small"
               value={preset?.id ?? ""}
@@ -434,8 +491,21 @@ function Shell() {
               ))}
             </Select>
           )}
+          {install && (
+            <Tooltip title={t.install}>
+              {mobile ? (
+                <IconButton color="primary" onClick={install}>
+                  <InstallMobileIcon />
+                </IconButton>
+              ) : (
+                <Button size="small" variant="outlined" startIcon={<InstallDesktopIcon />} onClick={install}>
+                  {t.install}
+                </Button>
+              )}
+            </Tooltip>
+          )}
           <MuteButton muteUntil={settings.muteUntil} />
-          <PanelToggle open={right} onClick={toggleRight} title={t.toggleRight} />
+          {!mobile && <PanelToggle open={right} onClick={toggleRight} title={t.toggleRight} />}
           <Tooltip title={t.settings}>
             <IconButton onClick={() => setSettingsOpen({})}>
               <SettingsIcon />
@@ -443,29 +513,56 @@ function Shell() {
           </Tooltip>
         </Toolbar>
       </AppBar>
-      {window.api.web ? <WebNotice /> : <span />}
+      {/* Always an element: the grid rows count on it, also once the notice has gone. */}
+      <Box>{window.api.web && <WebNotice mobile={mobile} />}</Box>
 
-      <Box
-        sx={{
-          position: "relative",
-          display: "grid",
-          gridTemplateColumns: `${left ? `${widths.left}px ` : ""}minmax(0, 1fr)${right ? ` ${widths.right}px` : ""}`,
-          minHeight: 0,
-        }}
-      >
-        {left && <Resizer side="left" at={widths.left} onWidth={setWidth("left")} />}
-        {right && <Resizer side="right" at={widths.right} onWidth={setWidth("right")} />}
-        {left && (
-          <AlertsPanel
-            location={location}
-            onFocus={(lat, lon, id) => setFocus({ lat, lon, id, at: Date.now() })}
-            region={region}
-            onRegion={setRegion}
+      {mobile ? (
+        // Phone: the map always underneath (it keeps its state), a panel laid over it when picked.
+        <Box sx={{ position: "relative", minHeight: 0, display: "grid" }}>
+          {map}
+          {view !== "map" && (
+            <Box sx={{ position: "absolute", inset: 0, zIndex: 10, display: "grid", bgcolor: "background.default" }}>
+              {view === "panel" ? panel : feed}
+            </Box>
+          )}
+        </Box>
+      ) : (
+        <Box
+          sx={{
+            position: "relative",
+            display: "grid",
+            gridTemplateColumns: `${left ? `${widths.left}px ` : ""}minmax(0, 1fr)${right ? ` ${widths.right}px` : ""}`,
+            minHeight: 0,
+          }}
+        >
+          {left && <Resizer side="left" at={widths.left} onWidth={setWidth("left")} />}
+          {right && <Resizer side="right" at={widths.right} onWidth={setWidth("right")} />}
+          {left && panel}
+          {map}
+          {right && feed}
+        </Box>
+      )}
+
+      {mobile && (
+        <BottomNavigation
+          showLabels
+          value={view}
+          onChange={(_e, v) => setView(v)}
+          sx={{ borderTop: 1, borderColor: "divider", pb: "env(safe-area-inset-bottom)", height: "auto", minHeight: 56 }}
+        >
+          <BottomNavigationAction value="map" label={t.navMap} icon={<MapIcon />} />
+          <BottomNavigationAction
+            value="panel"
+            label={t.navAlerts}
+            icon={
+              <Badge color="error" badgeContent={neptun.threats.length} max={99}>
+                <NotificationsActiveIcon />
+              </Badge>
+            }
           />
-        )}
-        <MapView dark={dark} location={location} focus={focus} region={region} onRegion={setRegion} />
-        {right && <FeedPanel channels={settings.channelsFiltered ? settings.channels : null} />}
-      </Box>
+          <BottomNavigationAction value="feed" label={t.feed} icon={<ForumIcon />} />
+        </BottomNavigation>
+      )}
 
       {loaded && <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(null)} dark={dark} />}
     </Box>

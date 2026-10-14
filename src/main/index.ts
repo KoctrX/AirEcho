@@ -125,9 +125,14 @@ function registerIpc(): void {
   // them itself; the main process is not subject to CORS.
   ipcMain.handle("neptun:geo", async (_e, name: string) => {
     if (name !== "oblasts" && name !== "raions") throw new Error("bad geo name");
-    const res = await net.fetch(`https://neptun.in.ua/${name}.geojson`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return res.json();
+    try {
+      const res = await net.fetch(`https://neptun.in.ua/${name}.geojson`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.json();
+    } catch {
+      // NEPTUN down or slow: the copy shipped with the app (borders change about never).
+      return JSON.parse(await readFile(join(resources, "geo", `${name}.geojson`), "utf8"));
+    }
   });
 
   ipcMain.on("window:show", showWindow);

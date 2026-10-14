@@ -163,8 +163,9 @@ function TrackRow({
 
   return (
     <Paper variant="outlined" sx={{ p: 1.5, position: "relative", overflow: "hidden", borderColor: recording ? "error.main" : undefined }}>
-      <Stack direction="row" sx={{ gap: 1.5, alignItems: "center" }}>
-        <Stack sx={{ flex: 1, gap: 1, minWidth: 0 }}>
+      {/* Wraps on a phone: the trigger above, the sound controls (or the recorder) below. */}
+      <Stack direction="row" sx={{ gap: 1.5, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
+        <Stack sx={{ flex: "1 1 220px", gap: 1, minWidth: 0 }}>
           {trigger.kind === "alertStart" && <Typography>{t.trigAlertStart}</Typography>}
           {trigger.kind === "alertEnd" && <Typography>{t.trigAlertEnd}</Typography>}
           {trigger.kind === "threat" && (
@@ -226,8 +227,9 @@ function TrackRow({
             onCancel={() => setRecording(false)}
           />
         ) : (
-          <>
-            <Stack sx={{ minWidth: 110, alignItems: "flex-end" }}>
+          // The controls move as one group when the row wraps on a phone, instead of one by one.
+          <Stack direction="row" sx={{ alignItems: "center", gap: 0.5, flexShrink: 0 }}>
+            <Stack sx={{ minWidth: 70, alignItems: "flex-end", mr: 0.5 }}>
               <Typography variant="body2" sx={{ fontVariantNumeric: "tabular-nums" }} color={track.file ? "text.primary" : "text.secondary"}>
                 {!track.file ? t.noSound : soundMs === null ? "…" : soundMs < 0 ? t.soundReady : length(soundMs)}
               </Typography>
@@ -274,7 +276,7 @@ function TrackRow({
                 <DeleteIcon />
               </IconButton>
             </Tooltip>
-          </>
+          </Stack>
         )}
       </Stack>
     </Paper>

@@ -1,7 +1,8 @@
 name: pages
 
-# The browser version on GitHub Pages, rebuilt on every push to main (the oblast/raion borders are
-# copied from NEPTUN at build time; they change about never).
+# The browser version on GitHub Pages, rebuilt on every push to main. NEPTUN's oblast/raion borders
+# are served from a copy in resources/geo (they change about never, and NEPTUN sends them without
+# CORS, so the page could not fetch them itself).
 on:
   push:
     branches: [main]
@@ -30,11 +31,6 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run web:build
-      # NEPTUN serves these without CORS, so the page cannot fetch them itself: publish copies.
-      - run: |
-          mkdir -p dist-web/geo
-          curl -fsSL https://neptun.in.ua/oblasts.geojson -o dist-web/geo/oblasts.geojson
-          curl -fsSL https://neptun.in.ua/raions.geojson -o dist-web/geo/raions.geojson
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist-web

@@ -3,9 +3,9 @@ import react from "@vitejs/plugin-react";
 import { version } from "./package.json";
 
 /**
- * The browser build of the same renderer, for GitHub Pages. `resources/` is published as-is (the
- * default preset and the icon); NEPTUN's boundary files are copied into `geo/` by the Pages
- * workflow — and proxied in dev — because NEPTUN serves them without a CORS header.
+ * The browser build of the same renderer, for GitHub Pages. `resources/` is published as-is: the
+ * default preset, the icons and PWA files, and `geo/` — a copy of NEPTUN's boundary files, which
+ * NEPTUN serves without a CORS header (refresh it with `npm run geo:update` if the borders change).
  */
 export default defineConfig({
   root: "src/renderer",
@@ -14,9 +14,4 @@ export default defineConfig({
   plugins: [react()],
   define: { __APP_VERSION__: JSON.stringify(version) },
   build: { outDir: "../../dist-web", emptyOutDir: true },
-  server: {
-    proxy: {
-      "/geo": { target: "https://neptun.in.ua", changeOrigin: true, rewrite: (path) => path.replace(/^\/geo/, "") },
-    },
-  },
 });

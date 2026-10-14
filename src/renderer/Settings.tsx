@@ -28,6 +28,8 @@ import {
   ToggleButton,
   ToggleButtonGroup,
   Typography,
+  useMediaQuery,
+  useTheme,
 } from "@mui/material";
 import EditIcon from "@mui/icons-material/Edit";
 import DeleteIcon from "@mui/icons-material/Delete";
@@ -45,13 +47,29 @@ import { APP_VERSION, t } from "./texts";
 
 export default function SettingsDialog({ open, onClose, dark }: { open: { tab?: number } | null; onClose: () => void; dark: boolean }) {
   const [tab, setTab] = useState(0);
+  // On a phone the settings take the whole screen: a dialog over a 360 px map helps nobody.
+  const phone = useMediaQuery(useTheme().breakpoints.down("sm"));
   // Opened for a given tab (the "?" shortcut opens the keys); otherwise where it was left.
   useEffect(() => {
     if (open?.tab !== undefined) setTab(open.tab);
   }, [open]);
   return (
-    <Dialog open={open !== null} onClose={onClose} maxWidth="md" fullWidth slotProps={{ paper: { sx: { height: "85vh" } } }}>
-      <Tabs value={tab} onChange={(_e, v) => setTab(v)} sx={{ borderBottom: 1, borderColor: "divider", px: 2 }}>
+    <Dialog
+      open={open !== null}
+      onClose={onClose}
+      maxWidth="md"
+      fullWidth
+      fullScreen={phone}
+      slotProps={{ paper: { sx: phone ? { pt: "env(safe-area-inset-top)", pb: "env(safe-area-inset-bottom)" } : { height: "85vh" } } }}
+    >
+      <Tabs
+        value={tab}
+        onChange={(_e, v) => setTab(v)}
+        variant="scrollable"
+        scrollButtons="auto"
+        allowScrollButtonsMobile
+        sx={{ borderBottom: 1, borderColor: "divider", px: phone ? 0 : 2 }}
+      >
         <Tab label={t.tabLocations} />
         <Tab label={t.tabGeneral} />
         <Tab label={t.tabChannels} />
@@ -320,7 +338,7 @@ function SoundsTab() {
 
   return (
     <Stack sx={{ gap: 2, pt: 1 }}>
-      <Stack direction="row" sx={{ gap: 1, alignItems: "center" }}>
+      <Stack direction="row" sx={{ gap: 1, alignItems: "center", flexWrap: "wrap" }}>
         <TextField
           select
           size="small"

@@ -3,9 +3,17 @@
   <head>
     <meta charset="UTF-8" />
     <title>AirEcho</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0f1115" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" href="icon-192.png" />
+    <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' airecho: https://neptun.in.ua wss://neptun.in.ua https://basemaps.cartocdn.com https://*.basemaps.cartocdn.com; worker-src blob:; child-src blob:; media-src 'self' airecho: blob:"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' airecho: blob: https://neptun.in.ua wss://neptun.in.ua https://basemaps.cartocdn.com https://*.basemaps.cartocdn.com; worker-src 'self' blob:; manifest-src 'self'; child-src blob:; media-src 'self' airecho: blob:"
     />
   </head>
   <body>

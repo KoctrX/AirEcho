@@ -19,7 +19,8 @@
     "dist:win": "electron-vite build && electron-builder --win",
     "dist:mac": "electron-vite build && electron-builder --mac",
     "web:dev": "vite --config vite.web.config.ts",
-    "web:build": "vite build --config vite.web.config.ts"
+    "web:build": "vite build --config vite.web.config.ts",
+    "geo:update": "curl -fsSL --retry 5 --retry-all-errors https://neptun.in.ua/oblasts.geojson -o resources/geo/oblasts.geojson && curl -fsSL --retry 5 --retry-all-errors https://neptun.in.ua/raions.geojson -o resources/geo/raions.geojson"
   },
   "build": {
     "appId": "ua.airecho.app",
@@ -30,7 +31,16 @@
     "extraResources": [
       {
         "from": "resources",
-        "to": "."
+        "to": ".",
+        "filter": [
+          "**/*",
+          "!sw.js",
+          "!manifest.webmanifest",
+          "!icon-192.png",
+          "!icon-512.png",
+          "!icon-maskable-512.png",
+          "!apple-touch-icon.png"
+        ]
       }
     ],
     "linux": {

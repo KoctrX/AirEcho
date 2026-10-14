@@ -275,7 +275,7 @@ export default function Recorder({ onApply, onCancel }: { onApply: (bytes: Uint8
 
   if (error) {
     return (
-      <Stack direction="row" sx={{ alignItems: "center", gap: 1, width: 380 }}>
+      <Stack direction="row" sx={{ alignItems: "center", gap: 1, width: { xs: "100%", sm: 380 } }}>
         <Typography variant="caption" color="error" sx={{ flex: 1 }}>
           {error}
         </Typography>
@@ -290,7 +290,7 @@ export default function Recorder({ onApply, onCancel }: { onApply: (bytes: Uint8
 
   const live = !take;
   return (
-    <Stack direction="row" sx={{ alignItems: "center", gap: 0.5, width: 400 }}>
+    <Stack direction="row" sx={{ alignItems: "center", gap: 0.5, width: { xs: "100%", sm: 400 } }}>
       <Stack
         direction="row"
         sx={{
